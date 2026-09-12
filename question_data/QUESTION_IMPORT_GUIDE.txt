@@ -1,0 +1,15 @@
+SKTECH EXAM PORTAL V7 — QUESTION DATA PACK
+
+Included source files from the user's uploaded question banks.
+
+READY FOR IMPORT:
+- question_seed_import.csv = normalized records that could be safely parsed
+- question_seed_v7.sql = SQL inserts for those normalized records
+- IMPORT_SUMMARY.json = counts
+
+IMPORTANT:
+1. Records are intentionally marked PENDING for Admin Review, not auto-published.
+2. The source files contain some repeated/pattern-generated questions and some malformed/duplicate option sets. Do not blindly publish them.
+3. Admin should verify question text, four options, correct answer, language, subject/topic/exam mapping before approval.
+4. Raw source files are preserved under question_data/source so no user data is lost.
+5. After approval, only status='approved' records should appear in the candidate question bank/exams.

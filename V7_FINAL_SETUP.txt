@@ -1,0 +1,16 @@
+SKTECH EXAM PORTAL V7 — FINAL FUNCTIONAL BASELINE
+
+1) Use this same source in BOTH Vercel projects.
+   Candidate project: VITE_PORTAL_MODE=candidate
+   Admin project:     VITE_PORTAL_MODE=admin
+
+2) Keep these Vercel variables in each project:
+   VITE_SUPABASE_URL=https://YOURPROJECT.supabase.co
+   VITE_SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_KEY
+   Admin only: VITE_ADMIN_AUTH_EMAIL=YOUR_ADMIN_EMAIL
+
+3) Supabase: run supabase_schema_v7.sql in SQL Editor.
+4) Create the Admin Auth user, then run the commented bootstrap INSERT with that admin email to assign super_admin role.
+5) The admin dashboard no longer displays fabricated KPI numbers. It reads counts from Supabase tables and shows 0 when no real records exist.
+6) Question workflow is designed as: Import -> Pending Review -> Edit/Map -> Approve -> Published -> Candidate/Exam.
+7) For full OCR/AI parsing of PDF/DOCX/XLSX/images and scheduled Current Affairs, add a server-side Edge Function/AI provider; never expose service-role keys in Vite frontend variables.

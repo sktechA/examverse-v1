@@ -1,0 +1,8 @@
+V7 Sample Question Data
+
+The Supabase schema includes 30 sample questions: 20 approved and 10 pending for Review Queue testing.
+
+Run supabase_schema_v7.sql in Supabase SQL Editor.
+
+A sample_questions.csv is included for testing the Admin import flow.
+Do not treat sample questions as official exam questions; replace them with your own verified bank before production.

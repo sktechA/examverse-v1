@@ -1,0 +1,42 @@
+{
+  "raw_records": 3256,
+  "unique_records": 3256,
+  "by_exam": {
+    "IBPS RRB Prelims": 2925,
+    "IBPS RRB Practice": 30,
+    "IBPS RRB Mains": 45,
+    "MP Sub Engineer / Technical": 256
+  },
+  "by_subject": {
+    "Inequality": 116,
+    "Syllogism": 4,
+    "Coding-Decoding": 50,
+    "Ranking": 161,
+    "Number Series": 308,
+    "Blood Relation": 4,
+    "Direction": 1,
+    "Seating": 149,
+    "Simplification": 500,
+    "Profit & Loss": 294,
+    "Simple Interest": 86,
+    "Ratio": 183,
+    "Time & Distance": 28,
+    "Time & Work": 35,
+    "Percentage": 42,
+    "Banking Awareness": 6,
+    "Computer Knowledge": 2,
+    "General Awareness & Static GK": 2,
+    "Quantitative Aptitude": 2,
+    "Reasoning": 966,
+    "Reasoning — प्रतिशत आधारित": 1,
+    "Quantitative Aptitude — सरल ब्याज": 1,
+    "Banking Awareness — श्रृंखला": 1,
+    "General Awareness & Static GK — औसत": 1,
+    "Computer Knowledge — प्रतिशत आधारित": 1,
+    "Current Affairs Practice — सरल ब्याज": 1,
+    "Reasoning — श्रृंखला": 5,
+    "Quantitative Aptitude — औसत": 5,
+    "MAINS HARD": 45,
+    "Electrical & Electronics": 256
+  }
+}

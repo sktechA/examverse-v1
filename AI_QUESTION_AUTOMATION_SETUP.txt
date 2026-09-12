@@ -1,0 +1,26 @@
+V7 AI QUESTION AUTOMATION
+
+Purpose:
+- Exact duplicates are automatically rejected.
+- AI reviews new questions for correctness, option consistency, bilingual completeness and metadata.
+- High-confidence good questions (>= 0.93) can be auto-approved.
+- High-confidence duplicates/rejections (>= 0.95) are auto-rejected.
+- Uncertain questions remain in Review Queue so the admin only handles exceptions.
+
+SECURITY:
+- OPENAI_API_KEY and SUPABASE_SERVICE_ROLE_KEY are server-side secrets only.
+- Never put either secret in Vercel VITE_* variables or browser code.
+
+SUPABASE:
+1. Add the SQL migration: supabase/ai_question_automation.sql
+2. Create/deploy Edge Function: ai-question-review
+3. Set secrets in Supabase Edge Functions:
+   OPENAI_API_KEY
+   OPENAI_REVIEW_MODEL (optional; default is gpt-5-mini)
+4. The function uses SUPABASE_SERVICE_ROLE_KEY server-side.
+
+Recommended workflow:
+Import -> exact duplicate check -> AI review -> auto-approve/reject when high confidence -> Review Queue for exceptions -> Published Question Bank.
+
+Important:
+AI should not blindly publish low-confidence questions. The threshold is intentionally conservative. Admin can override any AI decision.

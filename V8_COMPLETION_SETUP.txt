@@ -1,0 +1,16 @@
+SKTECH EXAM PORTAL V8 — COMPLETION SETUP
+
+1. Run supabase_schema_v8.sql in Supabase SQL Editor AFTER the existing V7 schema has been run.
+2. In Supabase Authentication, if immediate email/password login is required, turn OFF email confirmation.
+3. Keep Google provider configured if Google login is desired.
+4. Keep SMS/Phone provider configured if OTP or phone-password login is desired.
+5. Deploy supabase/functions/ai-question-review and set server secrets only:
+   OPENAI_API_KEY
+   SUPABASE_SERVICE_ROLE_KEY
+   OPENAI_REVIEW_MODEL (optional)
+6. Candidate portal Vercel: VITE_PORTAL_MODE=candidate.
+7. Admin portal Vercel: VITE_PORTAL_MODE=admin and VITE_ADMIN_AUTH_EMAIL set to the hidden backend admin email.
+8. The admin portal now verifies the signed-in account against profiles.role; an ordinary candidate cannot enter the admin console.
+9. Questions imported through CSV/TXT are saved as pending. Admin can edit, reject or publish. AI review can process pending records.
+10. Published questions are loaded by the candidate CBT and submitted attempts are saved to exam_attempts.
+11. Do not put OPENAI_API_KEY or SUPABASE_SERVICE_ROLE_KEY into VITE_* variables.

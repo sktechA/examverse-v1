@@ -1,0 +1,10 @@
+SKTech Exam Portal V9
+
+1. Deploy the source to the same GitHub/Vercel Admin and Candidate projects.
+2. Keep VITE_PORTAL_MODE=admin on the Admin Vercel project and candidate on Candidate.
+3. In Supabase SQL Editor run supabase_schema_v9.sql AFTER the existing V7/V8 schema.
+4. Admin identity is the fixed backend email configured as VITE_ADMIN_AUTH_EMAIL; the current designated admin is skt22tripathi@gmail.com.
+5. Question import uses the protected admin_import_questions RPC and stores new questions as pending_review. TXT parser recognizes numbered questions, A/B/C/D, Answer and Explanation lines.
+6. AI Review function: deploy supabase/functions/ai-question-review and configure Edge Function secrets OPENAI_API_KEY and SUPABASE_SERVICE_ROLE_KEY. Optional OPENAI_REVIEW_MODEL.
+7. AI Review processes up to 100 pending_review questions per click, exact-dedupes, sends uncertain questions to human review, and only auto-approves high-confidence clean questions.
+8. Do not put service-role or OpenAI secrets in VITE_* variables.

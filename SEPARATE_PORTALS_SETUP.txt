@@ -1,0 +1,19 @@
+SKTech Exam Portal - Separate Candidate and Admin URLs
+
+Use the same GitHub repository in TWO Vercel projects.
+
+Candidate project:
+Project name: sktech-exam-candidate
+Environment variable: VITE_PORTAL_MODE=candidate
+Suggested URL: https://sktech-exam-candidate.vercel.app
+
+Admin project:
+Project name: sktech-exam-admin
+Environment variable: VITE_PORTAL_MODE=admin
+Also add VITE_ADMIN_AUTH_EMAIL=<the Supabase admin email>
+Suggested URL: https://sktech-exam-admin.vercel.app
+
+Both projects use the same VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
+Do not put Supabase secret/service-role keys in VITE_ variables.
+
+After changing environment variables, redeploy the relevant Vercel project.

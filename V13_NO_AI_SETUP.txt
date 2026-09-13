@@ -1,0 +1,16 @@
+SKTech Exam Portal V13 — NO-AI SMART IMPORT
+
+1. Deploy this ZIP to the same Admin and Candidate Vercel projects.
+2. In Supabase SQL Editor run: supabase_schema_v13_no_ai.sql
+3. AI/OpenAI is NOT required for this version.
+4. TXT import is read as a question block:
+   Question number + heading/meta -> question -> A/B/C/D (or 1/2/3/4) -> Answer -> Explanation
+5. The parser normalizes source data into the database fields automatically.
+6. source_question_no preserves the question number from the source file.
+7. Clean records are auto-approved. Missing options, invalid answers, duplicate options and duplicate questions are quarantined as needs_correction.
+8. Only structurally valid approved questions are exposed to candidate mocks.
+9. Review screen shows Q number, full question, all four options, correct answer and explanation.
+10. Exam creation uses the live exams schema: title, total_questions, duration_minutes, marks_per_question, negative_marking, randomize_questions, published, status.
+11. Current Affairs, vacancies, candidates, notifications and existing non-AI pages remain in the application. Current Affairs sync still requires its separate existing function/source setup; this V13 does not make AI a dependency.
+
+12. CLEAN START: Before the first fresh import, run `V13_CLEAR_OLD_QUESTION_DATA.sql` once if you want the old Question/Review data completely cleared. This clears questions and question_imports only; it does not delete candidates, exams, vacancies, notifications, or system logs.

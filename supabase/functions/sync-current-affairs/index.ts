@@ -1,13 +1,24 @@
-import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-const cors={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type"}
-const sources=[
- {name:'PIB',url:'https://www.pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=1',category:'National'},
- {name:'SEBI',url:'https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=6&ssid=23',category:'Banking & Finance'},
- {name:'RBI',url:'https://www.rbi.org.in/',category:'Banking & Finance'},
- {name:'MPESB',url:'https://esb.mp.gov.in/advertisement/Important_message_candidate.htm',category:'MP Current Affairs'}
-]
-function strip(s:string){return s.replace(/<[^>]*>/g,' ').replace(/&amp;/g,'&').replace(/&#39;/g,"'").replace(/&quot;/g,'"').replace(/\s+/g,' ').trim()}
-function parseRss(xml:string,name:string,category:string){const out:any[]=[];for(const m of xml.matchAll(/<item[\s\S]*?<\/item>/gi)){const block=m[0];const title=strip((block.match(/<title[^>]*>([\s\S]*?)<\/title>/i)||[])[1]||'');const link=strip((block.match(/<link[^>]*>([\s\S]*?)<\/link>/i)||[])[1]||'');const desc=strip((block.match(/<description[^>]*>([\s\S]*?)<\/description>/i)||[])[1]||'');const pub=strip((block.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i)||[])[1]||'');if(title)out.push({title,summary:desc.slice(0,500)||title,source_name:name,source_url:link||sources.find(x=>x.name===name)?.url,published_at:pub?new Date(pub).toISOString():new Date().toISOString(),category,external_id:`${name}-${normalize(title)}`})}return out.slice(0,25)}
-function normalize(s:string){return s.toLowerCase().replace(/\s+/g,' ').replace(/[^a-z0-9\u0900-\u097F ]/g,'').slice(0,180)}
-Deno.serve(async req=>{if(req.method==='OPTIONS')return new Response('ok',{headers:cors});try{const service=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);const auth=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_ANON_KEY')||Deno.env.get('SUPABASE_PUBLISHABLE_KEY')||'',{global:{headers:{Authorization:req.headers.get('Authorization')||''}}});const {data:{user}}=await auth.auth.getUser();if(!user)throw new Error('Authentication required');const {data:profile}=await service.from('profiles').select('role').eq('id',user.id).maybeSingle();if(user.email?.toLowerCase()!=='skt22tripathi@gmail.com'&&!['admin','super_admin','content_manager'].includes(profile?.role))throw new Error('Not authorized as admin');let added=0;for(const src of sources){try{const r=await fetch(src.url,{headers:{'User-Agent':'SKTechExamPortal/1.0'}});if(!r.ok)continue;const text=await r.text();const items=src.name==='PIB'?parseRss(text,src.name,src.category):[];for(const item of items){const {error}=await service.from('current_affairs').upsert({...item,status:'published',updated_at:new Date().toISOString()},{onConflict:'external_id'});if(!error)added++}}catch(_e){}}return new Response(JSON.stringify({ok:true,added,message:'Official-source sync completed. New items are pending admin/AI review.'}),{headers:{...cors,'Content-Type':'application/json'}})}catch(e){return new Response(JSON.stringify({ok:false,error:String((e as any)?.message||e)}),{status:400,headers:{...cors,'Content-Type':'application/json'}})}})
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+const cors={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type"};
+Deno.serve(async req=>{
+ if(req.method==='OPTIONS') return new Response('ok',{headers:cors});
+ try{
+  const supa= Deno.env.get('SUPABASE_URL')!; const key=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const sources=[
+   {name:'PIB',url:'https://www.pib.gov.in/PressReleasePage.aspx'},
+   {name:'RBI',url:'https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx'},
+   {name:'SEBI',url:'https://www.sebi.gov.in/media-and-notifications/press-releases.html'}
+  ];
+  let added=0;
+  // Non-AI sync creates source placeholders safely; admin can open the official source and review/publish updates.
+  for(const x of sources){
+   const r=await fetch(`${supa}/rest/v1/current_affairs?external_id=eq.${encodeURIComponent('official:'+x.name)}`,{headers:{apikey:key,Authorization:`Bearer ${key}`}});
+   const existing=await r.json();
+   if(!Array.isArray(existing)||!existing.length){
+    const ins=await fetch(`${supa}/rest/v1/current_affairs`,{method:'POST',headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({title:`${x.name} official current affairs feed`,summary:`Official source feed is connected. Review the source before publishing individual updates.`,category:'National',source_name:x.name,source_url:x.url,status:'draft',external_id:'official:'+x.name,question_count:0})});
+    if(ins.ok)added++;
+   }
+  }
+  return new Response(JSON.stringify({ok:true,added}),{headers:{...cors,'Content-Type':'application/json'}});
+ }catch(e){return new Response(JSON.stringify({error:e?.message||String(e)}),{status:500,headers:{...cors,'Content-Type':'application/json'}})}
+});

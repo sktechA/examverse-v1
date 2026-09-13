@@ -1,7 +1,7 @@
 {
   "name": "examverse",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

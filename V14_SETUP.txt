@@ -1,0 +1,11 @@
+SKTech Exam Portal V14 - No AI
+
+1) Run supabase_schema_v14.sql in Supabase SQL Editor.
+2) Deploy this V14 build to the ADMIN and CANDIDATE Vercel projects using the existing environment variables.
+3) In Admin > Exam Management, create/publish an exam, then click Auto-map Questions. Questions are mapped by imported exam metadata (and subject when available).
+4) Candidate Mock Tests now load ONLY the questions assigned to that exam. There is no global fallback, so different exams will not silently show the same question bank.
+5) Submit Exam now opens the Result screen immediately and saves exam_id on the attempt.
+6) Question Review has Select All + Approve & Publish Selected. Structurally valid existing review rows are repaired to approved by the migration.
+7) AI/OpenAI is intentionally disabled in this version.
+
+Important: if an exam has 0 mapped questions, candidate sees a clear "No questions assigned" message instead of another exam's questions.

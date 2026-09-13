@@ -18,3 +18,10 @@ SKTech Exam Portal — V12 Core Fix
 6) Admin import uses a protected Supabase RPC and performs exact normalized duplicate checks.
 7) Exam creation uses a protected RPC and candidate mocks only read approved valid questions.
 8) First test with a small TXT (20–50 questions), verify Question Bank and Mock, then upload the large bank.
+
+V12.1 CREATE EXAM TITLE FIX
+- Exam Title is now a dropdown in Admin > Exam Management.
+- Uses predefined exam/mock master options; other Create Exam fields are unchanged.
+- Removed legacy exam_name references because the live exams table does not have that column.
+- Candidate Mock Tests now reads the title column only.
+- Supabase RPC admin_create_exam now inserts into the live-compatible exams columns without exam_name.

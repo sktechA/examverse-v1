@@ -90,8 +90,8 @@ CREATE OR REPLACE FUNCTION public.admin_create_exam(
 DECLARE e public.exams;
 BEGIN
   IF NOT public.is_admin() THEN RAISE EXCEPTION 'Admin access required'; END IF;
-  INSERT INTO public.exams(title,exam_name,question_count,duration_minutes,max_marks,negative_mark,randomize,status,created_by)
-  VALUES(trim(p_title),trim(p_title),GREATEST(1,p_question_count),GREATEST(1,p_duration_minutes),GREATEST(1,p_question_count),GREATEST(0,p_negative_mark),true,
+  INSERT INTO public.exams(title,question_count,duration_minutes,max_marks,negative_mark,randomize,status,created_by)
+  VALUES(trim(p_title),GREATEST(1,p_question_count),GREATEST(1,p_duration_minutes),GREATEST(1,p_question_count),GREATEST(0,p_negative_mark),true,
          CASE WHEN p_status IN ('published','draft') THEN p_status ELSE 'draft' END,COALESCE(p_created_by,auth.uid()))
   RETURNING * INTO e;
   RETURN e;

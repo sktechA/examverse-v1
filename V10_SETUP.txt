@@ -1,0 +1,75 @@
+SKTech Exam Portal V10 — Deployment / Setup
+
+WHAT V10 FIXES
+1. TXT is the primary question-import format and matches the user's existing format:
+   Q104. [Subject | Difficulty]
+   Question...
+   A. ...
+   B. ...
+   C. ...
+   D. ...
+   उत्तर: A. ...
+   विवरण: ...
+2. Correctly parses both styles:
+   - Q104. [Subject | Difficulty] followed by the question on the next line.
+   - 1013. [Prelims | Coding-Decoding] question on the same line.
+3. CSV parser handles quoted commas; XLSX is supported in the browser.
+4. Incomplete questions are blocked from import/publish.
+5. AI auto-review can process up to 100 per call and the UI loops automatically.
+6. High-confidence AI-clean questions are auto-published; uncertain questions stay in Review.
+7. Exact duplicates are rejected.
+8. Previously published blank/broken questions are quarantined as needs_correction.
+9. Mock Test only loads valid approved questions (question + A/B/C/D + valid answer).
+10. Candidate profile is ensured after successful login; confirmation-email resend is available when Supabase email confirmation is enabled.
+11. Current Affairs has its own candidate/admin section and a Daily Current Affairs Mock.
+12. Current Affairs table + official-source sync Edge Function are included.
+13. Footer is corrected to: Powered by SKTech All Right Reserved.
+
+SUPABASE — RUN ONCE
+Run in Supabase SQL Editor:
+  supabase_schema_v10.sql
+
+EDGE FUNCTIONS
+Deploy:
+  supabase/functions/ai-question-review/index.ts
+  supabase/functions/sync-current-affairs/index.ts
+
+Required Supabase Edge Function secrets:
+  SUPABASE_SERVICE_ROLE_KEY
+  OPENAI_API_KEY                 (required for AI question review)
+  OPENAI_REVIEW_MODEL            (optional; defaults to gpt-5-mini)
+
+The frontend uses only the public Supabase URL + publishable/anon key.
+Never put SERVICE_ROLE or OPENAI secrets in VITE_* variables.
+
+CURRENT AFFAIRS
+V10 includes a small official-source starter bank so the section and Daily Mock are visible immediately after the SQL migration.
+The Sync Official Sources button can populate additional official-source items. The included sync function reads PIB RSS and keeps the architecture ready for additional official sources (RBI, SEBI, MPESB).
+
+IMPORTANT
+V9 and earlier broken/blank approved question rows are quarantined by the V10 SQL migration. They will not appear in candidate mocks.
+
+DEPLOYMENT
+Candidate Vercel project:
+  VITE_PORTAL_MODE=candidate
+Admin Vercel project:
+  VITE_PORTAL_MODE=admin
+
+Both projects need:
+  VITE_SUPABASE_URL
+  VITE_SUPABASE_ANON_KEY
+
+Admin project also needs:
+  VITE_ADMIN_AUTH_EMAIL
+
+RECOMMENDED TEST ORDER
+1. Run supabase_schema_v10.sql.
+2. Deploy both Edge Functions and set secrets.
+3. Deploy V10 Candidate + Admin.
+4. Admin login/profile.
+5. Upload a 5–10 question TXT file in the exact existing format.
+6. Confirm questions are parsed correctly in Pending Review.
+7. Click Run AI Auto-Review.
+8. Confirm valid high-confidence questions move to Published.
+9. Open Candidate → Current Affairs and Daily Mock.
+10. Test candidate email confirmation/login.

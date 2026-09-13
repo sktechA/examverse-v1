@@ -1,7 +1,7 @@
 {
   "name": "examverse",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,7 +14,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "lucide-react": "^0.468.0",
-    "@supabase/supabase-js": "^2.57.4"
+    "@supabase/supabase-js": "^2.57.4",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {}
 }

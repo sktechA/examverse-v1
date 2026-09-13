@@ -1,0 +1,16 @@
+Q104. [General Awareness & Current Affairs Practice | MAINS HARD]
+RRB Mains के current affairs section में किस जानकारी को परीक्षा से पहले verify करना सबसे जरूरी है?
+A) हालिया RBI monetary policy और banking updates
+B) पुराने गणितीय सूत्र
+C) वर्णमाला क्रम
+D) कंप्यूटर का binary आधार
+उत्तर: A) हालिया RBI monetary policy और banking updates
+विवरण: Current affairs समय के साथ बदलते हैं, इसलिए RBI और अन्य आधिकारिक स्रोतों से हालिया updates verify करना जरूरी है।
+
+105. [Prelims | Coding-Decoding] यदि प्रत्येक अक्षर को 1 स्थान आगे किया जाए, तो 'EXAM' का कोड क्या होगा?
+A) FYBN
+B) NBYF
+C) EXAM
+D) DWZL
+उत्तर: A. FYBN
+व्याख्या: प्रत्येक अक्षर में 1 जोड़ा गया है, इसलिए कोड FYBN होगा।

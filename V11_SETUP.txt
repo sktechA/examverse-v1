@@ -1,0 +1,54 @@
+SKTech Exam Portal V11 — FIXED AI + BULK PIPELINE
+
+WHAT IS FIXED
+- Import is followed automatically by AI review.
+- Edge Function invocation now has a Vercel serverless fallback.
+- Exact duplicate detection happens before AI.
+- High-confidence clean questions auto-publish.
+- Uncertain questions remain in Review.
+- Bulk AI Review button processes all pending questions in batches.
+- Select All Visible + Bulk Delete added.
+- AI progress and exact failure reason are shown.
+- TXT remains the primary format; CSV/XLSX remain supported.
+
+IMPORTANT SERVER ENV FOR ADMIN VERCEL PROJECT
+Add these as server-side Vercel environment variables (NOT VITE_*):
+OPENAI_API_KEY = your OpenAI secret
+SUPABASE_SERVICE_ROLE_KEY = your Supabase service-role secret
+
+Keep these existing browser variables:
+VITE_PORTAL_MODE=admin
+VITE_SUPABASE_URL=...
+VITE_SUPABASE_ANON_KEY=...
+VITE_ADMIN_AUTH_EMAIL=...
+
+SUPABASE EDGE FUNCTION
+Still recommended to deploy:
+supabase/functions/ai-question-review/index.ts
+
+The frontend first calls the Supabase Edge Function. If it is missing/not deployed, it automatically tries /api/ai-review on Vercel.
+
+SECURITY
+Never put OPENAI_API_KEY or SUPABASE_SERVICE_ROLE_KEY in VITE_* variables.
+Never paste these secrets into chat.
+
+DEPLOYMENT
+1. Run the already-applied V10 SQL changes; do not rerun old V10 SQL blindly.
+2. Deploy this V11 source to both Candidate and Admin Vercel projects.
+3. On ADMIN Vercel, add OPENAI_API_KEY and SUPABASE_SERVICE_ROLE_KEY as server-side variables.
+4. Redeploy Admin after adding env variables.
+5. Login to Admin -> Question Bank.
+6. Upload a 5–10 question TXT test first.
+7. Import automatically starts AI review.
+8. Verify Approved / Review / Needs Correction counts.
+9. Then upload 2000–5000 questions.
+
+NOTE
+The local environment could not complete npm install within the available build window, so Vite production build was not locally verified. Parser logic and source-level changes were verified.
+
+V11 SYSTEM LOGS SETUP
+1. Run supabase_schema_v11_logs.sql after the existing V10/V11 schema.
+2. Admin Console now has System Logs.
+3. Candidate-side authenticated errors (auth, exam engine, profile/runtime) are recorded without passwords, OTPs, tokens or API keys.
+4. AI/import errors are also recorded in System Logs.
+5. Use Copy Details to send a troubleshooting record for the next version.

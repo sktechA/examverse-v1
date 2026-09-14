@@ -1,0 +1,6 @@
+{
+  "name": "SKTech Exam Portal",
+  "description": "Comprehensive exam preparation, CBT mock tests, question bank management and automated current affairs portal",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

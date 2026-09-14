@@ -1,4 +1,4 @@
-﻿source_file,source_question_id,exam,subject,topic,subtopic,difficulty,language,question,question_hi,english_question,option_a,option_b,option_c,option_d,correct_answer,explanation,status,tags,import_key
+source_file,source_question_id,exam,subject,topic,subtopic,difficulty,language,question,question_hi,english_question,option_a,option_b,option_c,option_d,correct_answer,explanation,status,tags,import_key
 IBPS_RRB_PRELIMS_BULK_4000_MCQ_HINDI(1).txt,2001,IBPS RRB Prelims,Simplification,Simplification,,Moderate,Hindi,सरलीकरण करें: (169+6)×20,सरलीकरण करें: (169+6)×20,,3500,3503,3497,3506,A,पहले कोष्ठक: 175; फिर ×20 = 3500।,pending_review,,1d65be346987db1b
 IBPS_RRB_PRELIMS_BULK_4000_MCQ_HINDI(1).txt,2002,IBPS RRB Prelims,Simplification,Simplification,,Moderate,Hindi,सरलीकरण करें: 2352÷14−7,सरलीकरण करें: 2352÷14−7,,161,164,158,167,A,2352÷14=168; फिर −7=161।,pending_review,,32f04910293dae71
 IBPS_RRB_PRELIMS_BULK_4000_MCQ_HINDI(1).txt,2003,IBPS RRB Prelims,Simplification,Simplification,,Moderate,Hindi,सरलीकरण करें: (83+18)×7,सरलीकरण करें: (83+18)×7,,707,710,704,713,A,पहले कोष्ठक: 101; फिर ×7 = 707।,pending_review,,86ffd2174a69873a

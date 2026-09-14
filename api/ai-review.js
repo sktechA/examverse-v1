@@ -1,87 +1,284 @@
-import { createClient } from '@supabase/supabase-js';
+import {
+  getSupabaseAdmin,
+  getGeminiClient,
+  normalizeText,
+  validateQuestionDeterministic,
+  verifyAdminAuth
+} from './_shared.js';
 
-const normalize = (s='') => s.toLowerCase().replace(/\s+/g,' ').replace(/[^\p{L}\p{N}\s]/gu,'').trim();
-const valid = q => !!(q.question?.trim() && q.option_a?.trim() && q.option_b?.trim() && q.option_c?.trim() && q.option_d?.trim() && /^[ABCD]$/.test(String(q.correct_answer||'').trim().toUpperCase()));
-
-async function writeLog(sb, level, source, action, message, details={}, user_id=null){
-  try { await sb.from('system_logs').insert({level,source,action,message:String(message).slice(0,2000),details,user_id}); } catch (_) {}
+async function writeLog(sb, level, source, action, message, details = {}, user_id = null) {
+  try {
+    await sb
+      .from('system_logs')
+      .insert({ level, source, action, message: String(message).slice(0, 2000), details, user_id });
+  } catch (_) {}
 }
 
-async function aiBatch(questions, key) {
-  const payload = {
-    model: process.env.OPENAI_REVIEW_MODEL || 'gpt-5-mini',
-    response_format: {type:'json_object'},
-    messages: [
-      {role:'system', content:'You are a strict competitive-exam question quality controller. Review every question independently. Never invent facts or answers. Return JSON only: {"reviews":[{"index":0,"verdict":"publish|duplicate|review|reject","confidence":0.0,"correct_answer_valid":true,"metadata_ok":true,"duplicate_index":null,"notes":""}]}. Auto-publish only if confidence >= 0.93 and supplied answer is valid. Use review when uncertain.'},
-      {role:'user', content: JSON.stringify({questions})}
-    ]
-  };
-  const r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  if(!r.ok) throw new Error(`OpenAI error ${r.status}: ${await r.text()}`);
-  const j=await r.json();
-  const parsed=JSON.parse(j.choices?.[0]?.message?.content||'{}');
-  return Array.isArray(parsed.reviews)?parsed.reviews:[];
+/**
+ * Gemini Batch Question Review
+ * Validates syllabus alignment, option plausibility, and answer veracity.
+ * Enforces timeout and error safety.
+ */
+async function geminiBatchReview(questions, geminiClient) {
+  const prompt = `You are a strict competitive-exam question quality controller. Review each question independently.
+CRITICAL RULES:
+1. Never invent facts or rewrite questions.
+2. Verify if declared correct_answer is factually and logically the correct option.
+3. Auto-publish ('publish') ONLY if confidence >= 0.93 and options are distinct and unambiguous.
+4. If uncertain or error found, choose 'review'.
+Return JSON only in format:
+{
+  "reviews": [
+    {
+      "index": 0,
+      "verdict": "publish",
+      "confidence": 0.95,
+      "correct_answer_valid": true,
+      "metadata_ok": true,
+      "notes": "Verified against syllabus standards"
+    }
+  ]
+}`;
+
+  // 15 second timeout protection against hung calls
+  const response = await Promise.race([
+    geminiClient.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: prompt },
+            { text: JSON.stringify({ questions }) }
+          ]
+        }
+      ],
+      config: {
+        responseMimeType: 'application/json'
+      }
+    }),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Gemini review request timed out after 15s')), 15000)
+    )
+  ]);
+
+  const parsed = JSON.parse(response.text || '{}');
+  return Array.isArray(parsed.reviews) ? parsed.reviews : [];
 }
 
-export default async function handler(req,res){
-  if(req.method!=='POST') return res.status(405).json({ok:false,error:'POST required'});
-  let sb=null, user=null;
-  try{
-    const url=process.env.VITE_SUPABASE_URL||process.env.SUPABASE_URL;
-    const serviceKey=process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const openai=process.env.OPENAI_API_KEY;
-    if(!url||!serviceKey) throw new Error('Vercel server env missing Supabase URL or SUPABASE_SERVICE_ROLE_KEY');
-    if(!openai) throw new Error('Vercel server env missing OPENAI_API_KEY');
-    sb=createClient(url,serviceKey);
-    const auth=req.headers.authorization||'';
-    const token=auth.replace(/^Bearer\s+/i,'');
-    if(!token) throw new Error('Authentication required');
-    const anon=process.env.VITE_SUPABASE_ANON_KEY||process.env.SUPABASE_ANON_KEY||'';
-    const userClient=createClient(url,anon,{global:{headers:{Authorization:`Bearer ${token}`}}});
-    const got=await userClient.auth.getUser(); user=got.data?.user;
-    if(!user) throw new Error('Authentication required');
-    const {data:profile}=await sb.from('profiles').select('role').eq('id',user.id).maybeSingle();
-    if(!['admin','super_admin','question_manager','content_manager'].includes(profile?.role)) throw new Error('Not authorized as admin');
-    const limit=Math.min(Math.max(Number(req.body?.limit||100),1),100);
-    const {data:qs,error}=await sb.from('questions').select('*').eq('status','pending_review').order('created_at',{ascending:true}).limit(limit);
-    if(error) throw error;
-    if(!qs?.length) return res.status(200).json({ok:true,processed:0,approved:0,rejected:0,review:0,needs:0});
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ ok: false, error: 'POST required' });
+  }
 
-    let processed=0,approved=0,rejected=0,review=0,needs=0;
-    const candidates=[];
-    for(const q of qs){
-      if(!valid(q)){
-        await sb.from('questions').update({status:'needs_correction',ai_review_status:'needs_correction',ai_verdict:'needs_correction',ai_confidence:1,ai_notes:'Required question/options/answer field missing or invalid.',ai_reviewed_at:new Date().toISOString()}).eq('id',q.id);
-        processed++;needs++;continue;
-      }
-      const {data:pool}=await sb.from('questions').select('id,question,question_hi,option_a,option_b,option_c,option_d,correct_answer,subject,topic,subtopic').in('status',['approved','pending_review']).neq('id',q.id).eq('subject',q.subject||'').limit(150);
-      const key=normalize(`${q.question} ${q.question_hi||''}`);
-      const exact=(pool||[]).find(x=>normalize(`${x.question} ${x.question_hi||''}`)===key);
-      if(exact){
-        await sb.from('questions').update({status:'rejected',ai_review_status:'duplicate',ai_verdict:'duplicate',ai_confidence:.99,ai_notes:'Exact normalized duplicate.',duplicate_of:exact.id,ai_reviewed_at:new Date().toISOString()}).eq('id',q.id);
-        processed++;rejected++;continue;
-      }
-      candidates.push(q);
+  const sb = getSupabaseAdmin();
+  if (!sb) {
+    return res.status(500).json({ ok: false, error: 'Database connection unavailable' });
+  }
+
+  // 1. Admin Authorization Verification
+  const auth = await verifyAdminAuth(req, sb);
+  if (!auth.ok) {
+    return res.status(auth.statusCode || 401).json({ ok: false, error: auth.error });
+  }
+
+  const user = auth.user;
+
+  try {
+    // 2. Batch Limit Protection (Max 25 per request to prevent cost abuse)
+    const rawLimit = Number(req.body?.limit || 20);
+    const limit = Math.min(Math.max(rawLimit, 1), 25);
+
+    // Fetch questions needing review that haven't been reviewed yet
+    const { data: qs, error: qErr } = await sb
+      .from('questions')
+      .select('*')
+      .eq('status', 'pending_review')
+      .order('created_at', { ascending: true })
+      .limit(limit);
+
+    if (qErr) throw qErr;
+    if (!qs?.length) {
+      return res.status(200).json({ ok: true, processed: 0, approved: 0, rejected: 0, review: 0, needs: 0 });
     }
 
-    // Review up to 20 questions per OpenAI request to avoid one-request-per-question timeouts.
-    for(let i=0;i<candidates.length;i+=20){
-      const batch=candidates.slice(i,i+20);
-      const reviews=await aiBatch(batch.map(q=>({question:q.question,question_hi:q.question_hi,option_a:q.option_a,option_b:q.option_b,option_c:q.option_c,option_d:q.option_d,correct_answer:q.correct_answer,explanation:q.explanation,subject:q.subject,topic:q.topic,difficulty:q.difficulty,language:q.language,exam:q.exam})),openai);
-      for(let j=0;j<batch.length;j++){
-        const q=batch[j],rv=reviews[j]||{verdict:'review',confidence:0,notes:'AI did not return a complete review.'};
-        let status='pending_review';
-        if(rv.verdict==='publish'&&Number(rv.confidence)>=.93&&rv.correct_answer_valid!==false&&rv.metadata_ok!==false){status='approved';approved++;}
-        else if((rv.verdict==='duplicate'||rv.verdict==='reject')&&Number(rv.confidence)>=.95){status='rejected';rejected++;}
-        else review++;
-        await sb.from('questions').update({status,ai_review_status:rv.verdict||'review',ai_verdict:rv.verdict||'review',ai_confidence:Number(rv.confidence||0),ai_notes:rv.notes||null,ai_reviewed_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',q.id);
+    let processed = 0, approved = 0, rejected = 0, review = 0, needs = 0;
+    const deterministicValidCandidates = [];
+
+    // 3. Deterministic Validation Pass
+    for (const q of qs) {
+      const val = validateQuestionDeterministic(q, {
+        requireSource: q.subject === 'Current Affairs'
+      });
+
+      if (!val.valid) {
+        // Marked as needs_correction, NEVER modified or rewritten automatically (Requirement 4)
+        await sb
+          .from('questions')
+          .update({
+            status: 'needs_correction',
+            ai_review_status: 'needs_correction',
+            ai_verdict: 'needs_correction',
+            ai_confidence: 0,
+            ai_notes: val.errors.join('; '),
+            ai_reviewed_at: new Date().toISOString()
+          })
+          .eq('id', q.id);
         processed++;
+        needs++;
+        continue;
       }
+
+      // Check duplicates against pool
+      const { data: pool } = await sb
+        .from('questions')
+        .select('id, question, option_a, option_b, option_c, option_d, correct_answer, subject')
+        .in('status', ['approved', 'pending_review'])
+        .neq('id', q.id)
+        .eq('subject', q.subject || '')
+        .limit(100);
+
+      const normQ = normalizeText(q.question);
+      const exactDup = (pool || []).find(x => normalizeText(x.question) === normQ);
+
+      if (exactDup) {
+        await sb
+          .from('questions')
+          .update({
+            status: 'rejected',
+            ai_review_status: 'duplicate',
+            ai_verdict: 'duplicate',
+            ai_confidence: 0.99,
+            ai_notes: 'Exact duplicate of existing question in question bank',
+            duplicate_of: exactDup.id,
+            ai_reviewed_at: new Date().toISOString()
+          })
+          .eq('id', q.id);
+        processed++;
+        rejected++;
+        continue;
+      }
+
+      deterministicValidCandidates.push(q);
     }
-    await writeLog(sb,'info','ai-review','bulk-review',`AI review completed: ${processed} processed, ${approved} approved, ${rejected} rejected, ${review} review, ${needs} needs correction.`,{limit},user.id);
-    return res.status(200).json({ok:true,processed,approved,rejected,review,needs});
-  }catch(e){
-    if(sb) await writeLog(sb,'error','ai-review','bulk-review-error',e?.message||String(e),{limit:req.body?.limit||null},user?.id||null);
-    return res.status(400).json({ok:false,error:e?.message||String(e)});
+
+    // 4. Gemini AI Review Pass (Strict Behavior: Item 2 & 3)
+    const isGeminiEnabled = (process.env.GEMINI_AI_ENABLED === 'true');
+    const geminiClient = isGeminiEnabled ? getGeminiClient() : null;
+
+    for (const q of deterministicValidCandidates) {
+      let status = 'pending_review';
+      let aiVerdict = 'deterministic_valid';
+      let confidence = 0;
+      let notes = 'Passed deterministic checks; pending admin approval';
+      let aiReviewedAt = new Date().toISOString();
+
+      if (isGeminiEnabled && geminiClient) {
+        try {
+          const aiInput = [{
+            question: q.question,
+            option_a: q.option_a,
+            option_b: q.option_b,
+            option_c: q.option_c,
+            option_d: q.option_d,
+            correct_answer: q.correct_answer,
+            explanation: q.explanation,
+            subject: q.subject,
+            topic: q.topic,
+            exam: q.exam
+          }];
+
+          const reviews = await geminiBatchReview(aiInput, geminiClient);
+          const rv = reviews[0];
+
+          if (rv && rv.verdict === 'publish' && Number(rv.confidence) >= 0.93 && rv.correct_answer_valid !== false) {
+            status = 'approved';
+            aiVerdict = 'publish';
+            confidence = Number(rv.confidence);
+            notes = rv.notes || 'Verified by Gemini AI quality check';
+            approved++;
+          } else if (rv && (rv.verdict === 'reject' || rv.verdict === 'duplicate')) {
+            status = 'rejected';
+            aiVerdict = rv.verdict;
+            confidence = Number(rv.confidence || 0);
+            notes = rv.notes || 'Flagged by quality controller';
+            rejected++;
+          } else {
+            status = 'pending_review';
+            aiVerdict = 'review';
+            confidence = Number(rv?.confidence || 0);
+            notes = rv?.notes || 'Flagged for admin manual review';
+            review++;
+          }
+        } catch (aiErr) {
+          // If Gemini fails/times out: DO NOT AUTO-APPROVE (Requirement 2 & 3)
+          console.warn('[Gemini AI Review Error]:', aiErr.message);
+          status = 'pending_review';
+          aiVerdict = 'review_error';
+          confidence = 0; // Zero fake confidence
+          notes = `Gemini review failed (${aiErr.message}); kept in pending_review`;
+          review++;
+
+          await writeLog(
+            sb,
+            'warning',
+            'gemini-review',
+            'api-error',
+            `Gemini evaluation error for question ${q.id}: ${aiErr.message}`,
+            { question_id: q.id },
+            user?.id
+          );
+        }
+      } else {
+        // Gemini is DISABLED:
+        // Do NOT pretend Gemini ran. Zero fake confidence. Status is pending_review.
+        status = 'pending_review';
+        aiVerdict = 'deterministic_valid';
+        confidence = 0;
+        notes = 'Passed deterministic validation; awaiting manual admin review (AI disabled)';
+        review++;
+      }
+
+      // Update question record WITHOUT rewriting any question or option text (Requirement 4 & 5)
+      await sb
+        .from('questions')
+        .update({
+          status,
+          ai_review_status: aiVerdict,
+          ai_verdict: aiVerdict,
+          ai_confidence: confidence,
+          ai_notes: notes,
+          ai_reviewed_at: aiReviewedAt,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', q.id);
+
+      processed++;
+    }
+
+    await writeLog(
+      sb,
+      'info',
+      'gemini-review',
+      'batch-review-completed',
+      `Review completed: ${processed} processed (${approved} approved, ${rejected} rejected, ${review} pending review, ${needs} needs correction).`,
+      { limit, ai_enabled: isGeminiEnabled },
+      user?.id
+    );
+
+    return res.status(200).json({ ok: true, processed, approved, rejected, review, needs });
+  } catch (err) {
+    if (sb) {
+      await writeLog(
+        sb,
+        'error',
+        'gemini-review',
+        'review-handler-failure',
+        err?.message || String(err),
+        {},
+        user?.id
+      );
+    }
+    return res.status(500).json({ ok: false, error: err?.message || 'AI review process failed' });
   }
 }

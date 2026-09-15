@@ -68,7 +68,8 @@ export const OFFICIAL_SOURCES = [
 
 export function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+  // Server-side endpoints MUST use the Supabase server secret. Never fall back to a browser key.
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
   if (!url || !key) {
     return null;
   }
@@ -146,10 +147,9 @@ export async function verifyAdminAuth(req, sb) {
       .maybeSingle();
 
     const allowedRoles = ['admin', 'super_admin', 'question_manager', 'exam_manager', 'content_manager'];
-    const isSuperAdminEmail = user.email?.toLowerCase() === 'skt22tripathi@gmail.com';
     const hasRole = profile && allowedRoles.includes(profile.role);
 
-    if (!isSuperAdminEmail && !hasRole) {
+    if (!hasRole) {
       return {
         ok: false,
         statusCode: 403,

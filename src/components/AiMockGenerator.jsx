@@ -142,9 +142,10 @@ export default function AiMockGenerator({ supabase, onExamCreated }) {
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          blueprintKey: selectedBlueprintKey,
+          examTitle: currentBp.title,
+          action: 'publish',
           mockCount: Number(mockCount),
-          publishNow: true
+          blueprint: currentBp
         })
       });
 

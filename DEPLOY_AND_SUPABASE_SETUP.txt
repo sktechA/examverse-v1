@@ -1,4 +1,4 @@
-SKTech Exam Portal V17.1 - MASTER BUG FIX
+SKTech Exam Portal - FINAL AUDITED MASTER PACKAGE
 
 This release is a consolidated fix, not a screen-only patch.
 
@@ -21,3 +21,19 @@ Do not run old schema files from previous releases.
 
 DEPLOY
 Deploy this release to the existing Vercel project/repository after reviewing the changes.
+
+
+FINAL AUDIT FIXES: server API endpoints require SUPABASE_SERVICE_ROLE_KEY; admin user creation is authenticated; candidate attempt isolation is enforced; candidate dashboard reads only its own attempts; published exams only are shown; AI mock-generator request/response contract is aligned; incomplete mocks cannot be published; mobile sidebar toggle is wired; universal numbered-option TXT parsing is fixed; old bundled question data is excluded.
+
+GEMINI: GEMINI_API_KEY is server-only. The default model is gemini-3.8-flash; change only if needed.
+
+DEPLOY ORDER:
+1. Upload/deploy this code package to the existing Vercel project(s).
+2. Set VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY in the browser project.
+3. Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY + CRON_SECRET (server-only) in Vercel.
+4. Set VITE_PORTAL_MODE=admin on admin project and candidate on candidate project.
+5. Run SKTECH_V17_MASTER_BUG_FIX.sql once in Supabase SQL Editor.
+6. Redeploy after environment variables and SQL are in place.
+7. Run the built-in Question Integrity Test from Admin > Daily 00:00 Pipeline.
+
+IMPORTANT: Never paste SUPABASE_SERVICE_ROLE_KEY, CRON_SECRET or GEMINI_API_KEY into chat or browser code.

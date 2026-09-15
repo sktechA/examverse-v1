@@ -1,6 +1,58 @@
 -- SKTech Exam Portal V17 Master Bug Fix
 -- Run this migration ONCE after the clean V17 deployment.
--- Non-destructive to candidates/exams/vacancies. It tightens question publishing and candidate isolation.
+-- Safe to run on the existing V17/V18 Supabase project. It only adds missing objects/columns
+-- and replaces the portal's security/mapping helpers. No candidate/exam/question rows are deleted.
+
+-- 0) Core security helpers used by every portal policy/RPC.
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path=public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles p
+    WHERE p.id = auth.uid()
+      AND p.role IN ('admin','super_admin','question_manager','exam_manager','vacancy_manager','content_manager','support')
+  );
+$$;
+REVOKE ALL ON FUNCTION public.is_admin() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.current_user_role()
+RETURNS text
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path=public
+AS $$
+  SELECT p.role::text FROM public.profiles p WHERE p.id=auth.uid();
+$$;
+REVOKE ALL ON FUNCTION public.current_user_role() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.current_user_role() TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.admin_create_exam(
+  p_title text, p_exam_type text, p_subject text, p_total_questions integer,
+  p_duration_minutes integer, p_marks_per_question numeric, p_negative_marking numeric,
+  p_randomize_questions boolean, p_published boolean, p_status text, p_created_by uuid
+)
+RETURNS public.exams
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public
+AS $$
+DECLARE r public.exams;
+BEGIN
+  IF NOT public.is_admin() THEN RAISE EXCEPTION 'Admin access required'; END IF;
+  IF coalesce(trim(p_title),'')='' THEN RAISE EXCEPTION 'Exam title is required'; END IF;
+  IF coalesce(p_total_questions,0) < 1 THEN RAISE EXCEPTION 'total_questions must be at least 1'; END IF;
+  INSERT INTO public.exams(title,description,exam_type,subject,total_questions,duration_minutes,marks_per_question,negative_marking,randomize_questions,published,status,created_by,created_at,updated_at)
+  VALUES(trim(p_title),null,p_exam_type,p_subject,p_total_questions,p_duration_minutes,coalesce(p_marks_per_question,1),coalesce(p_negative_marking,0),coalesce(p_randomize_questions,true),coalesce(p_published,false),coalesce(p_status,'draft'),coalesce(p_created_by,auth.uid()),now(),now())
+  RETURNING * INTO r;
+  RETURN r;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.admin_create_exam(text,text,text,integer,integer,numeric,numeric,boolean,boolean,text,uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.admin_create_exam(text,text,text,integer,integer,numeric,numeric,boolean,boolean,text,uuid) TO authenticated;
 
 -- 1) Required traceability fields
 ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS source_question_no integer;
@@ -151,3 +203,57 @@ SELECT status,count(*) total,
        count(*) FILTER (WHERE public.question_is_publishable(q)) publishable,
        count(*) FILTER (WHERE NOT public.question_is_publishable(q)) invalid
 FROM public.questions q GROUP BY status;
+
+
+-- 10) Automation settings: keep RLS enabled; only authenticated admin roles may write settings.
+ALTER TABLE public.automation_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS automation_settings_admin_all_v17 ON public.automation_settings;
+CREATE POLICY automation_settings_admin_all_v17
+ON public.automation_settings
+FOR ALL TO authenticated
+USING (public.is_admin())
+WITH CHECK (public.is_admin());
+
+
+-- 11) Candidate attempt isolation: candidates can only see/create their own attempts.
+ALTER TABLE public.exam_attempts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS exam_attempts_candidate_select_v17 ON public.exam_attempts;
+DROP POLICY IF EXISTS exam_attempts_candidate_insert_v17 ON public.exam_attempts;
+DROP POLICY IF EXISTS exam_attempts_admin_all_v17 ON public.exam_attempts;
+CREATE POLICY exam_attempts_candidate_select_v17 ON public.exam_attempts
+FOR SELECT TO authenticated
+USING (candidate_id = auth.uid() OR public.is_admin());
+CREATE POLICY exam_attempts_candidate_insert_v17 ON public.exam_attempts
+FOR INSERT TO authenticated
+WITH CHECK (candidate_id = auth.uid() OR public.is_admin());
+CREATE POLICY exam_attempts_admin_all_v17 ON public.exam_attempts
+FOR UPDATE TO authenticated
+USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY exam_attempts_admin_delete_v17 ON public.exam_attempts
+FOR DELETE TO authenticated
+USING (public.is_admin());
+
+-- 12) Candidate profile isolation + admin visibility.
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS profiles_self_read_v17 ON public.profiles;
+DROP POLICY IF EXISTS profiles_self_insert_v17 ON public.profiles;
+DROP POLICY IF EXISTS profiles_self_update_v17 ON public.profiles;
+DROP POLICY IF EXISTS profiles_admin_all_v17 ON public.profiles;
+CREATE POLICY profiles_self_insert_v17 ON public.profiles FOR INSERT TO authenticated
+WITH CHECK (id = auth.uid() AND coalesce(role,'candidate')='candidate');
+CREATE POLICY profiles_self_read_v17 ON public.profiles FOR SELECT TO authenticated
+USING (id = auth.uid() OR public.is_admin());
+CREATE POLICY profiles_self_update_v17 ON public.profiles FOR UPDATE TO authenticated
+USING (id = auth.uid() OR public.is_admin())
+WITH CHECK ((public.is_admin()) OR (id = auth.uid() AND coalesce(role,'candidate') = coalesce(public.current_user_role(),'candidate')));
+CREATE POLICY profiles_admin_all_v17 ON public.profiles FOR ALL TO authenticated
+USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+-- 13) Published exams are candidate-readable; draft exams remain admin-only.
+ALTER TABLE public.exams ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS exams_candidate_published_v17 ON public.exams;
+DROP POLICY IF EXISTS exams_admin_all_v17 ON public.exams;
+CREATE POLICY exams_candidate_published_v17 ON public.exams FOR SELECT TO authenticated
+USING ((status='published' AND coalesce(published,false)=true) OR public.is_admin());
+CREATE POLICY exams_admin_all_v17 ON public.exams FOR ALL TO authenticated
+USING (public.is_admin()) WITH CHECK (public.is_admin());

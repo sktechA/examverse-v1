@@ -1,0 +1,48 @@
+SKTech Exam Portal - FINAL AUDITED MASTER PACKAGE
+
+Audit scope
+- Frontend JSX syntax checked with TypeScript compiler.
+- All Vercel API JavaScript files passed Node syntax checks.
+- Supabase master migration structurally checked (balanced PostgreSQL dollar-quoted function blocks).
+- Old bundled question-bank seed data is excluded.
+
+Critical fixes in this package
+1. Universal TXT parser: numbered 1)-4) options are handled before numbered question detection.
+2. Candidate attempts: candidate_id + correct_count/wrong_count/skipped_count are used consistently.
+3. Candidate dashboard: only the logged-in candidate's attempts are loaded.
+4. Candidate dashboard: only published DB exams are displayed; stale hardcoded mock cards are removed.
+5. Published exams require status='published' AND published=true.
+6. Exam start refuses to silently run a partially mapped DB exam.
+7. Exam question RPC/RLS exposes only approved, publishable questions from published exams.
+8. Dependent arrangement questions without embedded context are quarantined.
+9. Bulk approval uses the same publishability gate.
+10. Admin exam creation RPC is included in the master SQL.
+11. Admin authorization helper is included in the master SQL.
+12. Candidate profile insert/read/update policies are hardened; candidates cannot change their role through normal profile updates.
+13. Candidate attempt RLS isolates each candidate's attempts.
+14. Server-side API clients require SUPABASE_SERVICE_ROLE_KEY; browser anon key is never used as a server mutation fallback.
+15. Admin user-creation endpoint now verifies the caller as an admin before creating accounts.
+16. AI mock generator frontend/API contract is aligned.
+17. AI mock publishing is blocked if the exact required question count is unavailable.
+18. Generated published mocks explicitly set published=true.
+19. Mobile hamburger/sidebar open-close logic is wired.
+20. Automation settings admin RLS policy is included.
+21. Gemini model configuration is compatible with gemini-3.8-flash.
+
+Known intentional boundary
+- The current bulk importer UI supports TXT/CSV/XLSX only. It no longer falsely advertises PDF/DOCX/image import in this final package.
+- Semantic correctness of an imported question cannot be proven deterministically from text alone; Gemini review is available as an additional review layer when GEMINI_API_KEY is configured.
+
+Deployment prerequisites
+- VITE_SUPABASE_URL
+- VITE_SUPABASE_ANON_KEY
+- SUPABASE_URL
+- SUPABASE_SERVICE_ROLE_KEY (server-only)
+- VITE_PORTAL_MODE=candidate or admin
+- VITE_ADMIN_AUTH_EMAIL on admin project
+- CRON_SECRET (server-only)
+- GEMINI_API_KEY only if Gemini validation/automation is enabled
+
+Database
+Run only: SKTECH_V17_MASTER_BUG_FIX.sql
+Do not mix old v7-v16 SQL/seed packages with this clean package.

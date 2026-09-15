@@ -1,4 +1,4 @@
-import { getSupabaseAdmin, verifyAdminAuth } from './_shared.js';
+import { getSupabaseAdmin, verifyAdminAuth, withApiLogging } from './_shared.js';
 
 async function handler(req, res) {
   const sb = getSupabaseAdmin();

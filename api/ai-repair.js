@@ -1,4 +1,4 @@
-import { getSupabaseAdmin, getGeminiClient, verifyAdminAuth, normalizeText, cleanAnswer } from './_shared.js';
+import { getSupabaseAdmin, getGeminiClient, verifyAdminAuth, normalizeText, cleanAnswer, withApiLogging } from './_shared.js';
 
 const TIMEOUT_MS = 20000;
 const THRESHOLD = 0.98;
@@ -19,7 +19,7 @@ async function repairWithGemini(gemini, q) {
   return JSON.parse(text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim());
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const sb = getSupabaseAdmin();
   if (!sb) return res.status(500).json({ error: 'Database connection unavailable' });
@@ -53,3 +53,5 @@ export default async function handler(req, res) {
   }
   return res.status(200).json({ ok: true, processed: rows?.length || 0, repaired, approved, kept, results });
 }
+
+export default withApiLogging(handler, 'ai-repair');

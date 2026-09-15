@@ -1,0 +1,8 @@
+V16 Complete System Logging
+
+1. Run V16_COMPLETE_SYSTEM_LOGGING.sql once in Supabase SQL Editor.
+2. Deploy this V16 build.
+3. System Logs will capture request start/end, API failures, exceptions, auth errors, AI/Gemini errors, scheduler errors, imports, current affairs sync, mock generation, browser errors and promise rejections.
+4. Levels: debug, info, warning, error, critical.
+5. Logs include source, action, event type, status code, duration, error code, request ID, user, page, details and stack trace when available.
+6. Never put API keys/passwords in log details.

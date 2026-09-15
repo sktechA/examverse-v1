@@ -3,7 +3,8 @@ import {
   getGeminiClient,
   normalizeText,
   validateQuestionDeterministic,
-  verifyAdminAuth
+  verifyAdminAuth,
+  withApiLogging
 } from './_shared.js';
 
 async function writeLog(sb, level, source, action, message, details = {}, user_id = null) {
@@ -66,7 +67,7 @@ Return JSON only in format:
   return Array.isArray(parsed.reviews) ? parsed.reviews : [];
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'POST required' });
   }
@@ -282,3 +283,5 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, error: err?.message || 'AI review process failed' });
   }
 }
+
+export default withApiLogging(handler, 'ai-review');

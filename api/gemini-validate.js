@@ -3,10 +3,11 @@ import {
   getGeminiClient,
   normalizeText,
   validateQuestionDeterministic,
-  verifyAdminAuth
+  verifyAdminAuth,
+  withApiLogging
 } from './_shared.js';
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'POST required' });
   }
@@ -270,3 +271,5 @@ Return JSON:
     });
   }
 }
+
+export default withApiLogging(handler, 'gemini-validate');

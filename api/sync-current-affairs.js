@@ -4,7 +4,8 @@ import {
   OFFICIAL_SOURCES,
   getKolkataDateString,
   validateQuestionDeterministic,
-  verifyAdminAuth
+  verifyAdminAuth,
+  withApiLogging
 } from './_shared.js';
 import crypto from 'node:crypto';
 
@@ -111,7 +112,7 @@ async function fetchRealOfficialBulletins(sources = OFFICIAL_SOURCES) {
   return { bulletins, fetchStatus };
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST' && req.method !== 'GET') {
     return res.status(405).json({ error: 'GET or POST required' });
   }
@@ -291,3 +292,5 @@ RULES:
     });
   }
 }
+
+export default withApiLogging(handler, 'sync-current-affairs');

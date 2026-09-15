@@ -1,6 +1,6 @@
 import { getSupabaseAdmin, verifyAdminAuth } from './_shared.js';
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   const sb = getSupabaseAdmin();
   if (!sb) {
     return res.status(500).json({ error: 'Database connection unavailable' });
@@ -90,3 +90,5 @@ export default async function handler(req, res) {
 
   return res.status(405).json({ error: 'Method not allowed' });
 }
+
+export default withApiLogging(handler, 'automation-settings');

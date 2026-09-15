@@ -167,6 +167,102 @@ export async function verifyAdminAuth(req, sb) {
   }
 }
 
+
+
+export function getRequestId(req) {
+  const incoming = req?.headers?.['x-request-id'] || req?.headers?.['X-Request-ID'];
+  if (incoming) return String(incoming).slice(0, 150);
+  return `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Central server-side logger. Never throws back into the business flow. */
+export async function writeSystemLog(sb, {
+  level = 'info', source = 'server', action = 'event', eventType = 'event',
+  message = '', details = {}, userId = null, userEmail = null, page = null,
+  requestId = null, statusCode = null, durationMs = null, errorCode = null,
+  stackTrace = null, environment = process.env.VERCEL_ENV || process.env.NODE_ENV || 'production'
+} = {}) {
+  const safeLevel = ['debug','info','warning','error','critical'].includes(level) ? level : 'info';
+  const payload = {
+    level: safeLevel,
+    source: String(source || 'server').slice(0,100),
+    action: String(action || '').slice(0,150),
+    event_type: String(eventType || 'event').slice(0,100),
+    message: String(message || 'Unknown event').slice(0,2000),
+    details: details && typeof details === 'object' ? details : { value: String(details) },
+    user_id: userId || null,
+    user_email: userEmail || null,
+    page: page ? String(page).slice(0,300) : null,
+    request_id: requestId || null,
+    status_code: Number.isFinite(Number(statusCode)) ? Number(statusCode) : null,
+    duration_ms: Number.isFinite(Number(durationMs)) ? Number(durationMs) : null,
+    error_code: errorCode ? String(errorCode).slice(0,100) : null,
+    stack_trace: stackTrace ? String(stackTrace).slice(0,8000) : null,
+    environment: String(environment || 'production').slice(0,50)
+  };
+  try {
+    if (!sb) { console.error('[SYSTEM_LOG_DB_UNAVAILABLE]', payload); return null; }
+    const { data, error } = await sb.from('system_logs').insert(payload).select('id').single();
+    if (error) { console.error('[SYSTEM_LOG_WRITE_FAILED]', error.message, payload); return null; }
+    return data?.id || null;
+  } catch (err) {
+    console.error('[SYSTEM_LOG_EXCEPTION]', err?.message || err, payload);
+    return null;
+  }
+}
+
+/** Wrap an API handler so every request, response and uncaught exception is logged. */
+export function withApiLogging(handler, source = 'api') {
+  return async function loggedHandler(req, res) {
+    const started = Date.now();
+    const requestId = getRequestId(req);
+    const sb = getSupabaseAdmin();
+    const method = req?.method || 'UNKNOWN';
+    const path = req?.url ? String(req.url).split('?')[0].slice(0,300) : null;
+    let statusCode = 200;
+    let finished = false;
+    try { if (res?.setHeader) res.setHeader('x-request-id', requestId); } catch (_) {}
+
+    const originalStatus = res?.status?.bind(res);
+    const originalJson = res?.json?.bind(res);
+    const originalEnd = res?.end?.bind(res);
+    if (originalStatus) res.status = (code) => { statusCode = Number(code) || statusCode; return originalStatus(code); };
+    if (originalJson) res.json = (body) => {
+      if (body?.ok === false || body?.error) statusCode = statusCode >= 400 ? statusCode : 500;
+      finished = true;
+      return originalJson(body);
+    };
+    if (originalEnd) res.end = (...args) => { finished = true; return originalEnd(...args); };
+
+    await writeSystemLog(sb, {
+      level: 'debug', source, action: 'request_start', eventType: 'request',
+      message: `${method} ${path || ''} started`, details: { method, path }, requestId
+    });
+
+    try {
+      const result = await handler(req, res);
+      await writeSystemLog(sb, {
+        level: statusCode >= 500 ? 'error' : statusCode >= 400 ? 'warning' : 'info',
+        source, action: 'request_end', eventType: statusCode >= 400 ? 'failure' : 'success',
+        message: `${method} ${path || ''} completed`,
+        details: { method, path, finished, returned: result !== undefined }, requestId,
+        statusCode, durationMs: Date.now() - started
+      });
+      return result;
+    } catch (err) {
+      const status = Number(err?.statusCode || err?.status || 500);
+      statusCode = status;
+      await writeSystemLog(sb, {
+        level: status >= 500 ? 'critical' : 'error', source, action: 'uncaught_exception', eventType: 'exception',
+        message: err?.message || String(err), details: { method, path }, requestId,
+        statusCode: status, durationMs: Date.now() - started,
+        errorCode: err?.code || err?.name || null, stackTrace: err?.stack || null
+      });
+      throw err;
+    }
+  };
+}
+
 export function normalizeText(s = '') {
   return String(s || '')
     .toLowerCase()

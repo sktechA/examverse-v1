@@ -1,7 +1,8 @@
 import {
   getSupabaseAdmin,
   isSubjectStrictMatch,
-  verifyAdminAuth
+  verifyAdminAuth,
+  withApiLogging
 } from './_shared.js';
 
 export const BLUEPRINT_PRESETS = {
@@ -64,7 +65,7 @@ export const BLUEPRINT_PRESETS = {
   }
 };
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'POST required' });
   }
@@ -237,3 +238,5 @@ export default async function handler(req, res) {
     });
   }
 }
+
+export default withApiLogging(handler, 'mock-generator');

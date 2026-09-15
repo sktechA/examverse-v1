@@ -6,7 +6,8 @@ import {
   validateQuestionDeterministic,
   isSubjectStrictMatch,
   normalizeText,
-  verifyAdminAuth
+  verifyAdminAuth,
+  withApiLogging
 } from './_shared.js';
 import syncCurrentAffairsHandler from './sync-current-affairs.js';
 import mockGeneratorHandler from './mock-generator.js';
@@ -234,7 +235,7 @@ Return JSON in this EXACT structure:
   return Array.isArray(parsed.reviews) ? parsed.reviews : [];
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   const isInternalCall = typeof req === 'string' || req?.isInternal;
   const todayStr = getKolkataDateString();
   const timeStr = getKolkataTimeString();
@@ -739,3 +740,5 @@ export {
   runGeminiReviewBatch,
   loadLocalSeedQuestions
 };
+
+export default withApiLogging(handler, 'daily-scheduler');

@@ -60,10 +60,11 @@ export default function DailyAutomation({ supabase, session }) {
     setLoading(true);
     try {
       // Fetch settings
-      const res = await fetch('/api/automation-settings');
+      const token = (await supabase?.auth?.getSession())?.data?.session?.access_token || '';
+      const res = await fetch('/api/automation-settings', { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const json = await res.json();
-        if (json.settings) setSettings(json.settings);
+        if (json.settings) setSettings({ ...settings, ...json.settings, daily_ca_target: Number(json.settings.daily_ca_target ?? json.settings.current_affairs_target ?? 150), daily_scheduler_enabled: Boolean(json.settings.daily_scheduler_enabled ?? json.settings.daily_automation_enabled ?? true), synthesis_mode_enabled: Boolean(json.settings.synthesis_mode_enabled ?? false) });
       }
 
       // Fetch logs from Supabase
@@ -92,8 +93,8 @@ export default function DailyAutomation({ supabase, session }) {
     try {
       const res = await fetch('/api/automation-settings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings })
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(await supabase?.auth?.getSession())?.data?.session?.access_token || ''}` },
+        body: JSON.stringify({ ...settings, current_affairs_target: settings.daily_ca_target, daily_automation_enabled: settings.daily_scheduler_enabled })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save settings');

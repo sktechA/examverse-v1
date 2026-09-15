@@ -132,21 +132,30 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
           // Subject Practice must use the administrator's database configuration.
           // Never fall back to hardcoded 25 questions / 25 minutes.
           if (exam.cat === 'Subject Test') {
-            const { data: subjectExam, error: subjectExamError } = await supabase
+            const requestedSubject = String(exam.subject || exam.name.replace(' Practice', '')).trim();
+            const { data: subjectExams, error: subjectExamError } = await supabase
               .from('exams')
-              .select('id, title, subject, total_questions, duration_minutes, marks_per_question, negative_marking, randomize_questions, published, status')
+              .select('id, title, subject, total_questions, duration_minutes, marks_per_question, negative_marking, randomize_questions, published, status, updated_at')
               .eq('published', true)
-              .eq('subject', exam.subject || exam.name.replace(' Practice', ''))
+              .eq('status', 'published')
               .order('updated_at', { ascending: false })
-              .limit(1)
-              .maybeSingle();
+              .limit(100);
 
             if (subjectExamError) {
               throw subjectExamError;
             }
 
+            const wanted = requestedSubject.toLowerCase().replace(/\s+/g, ' ').trim();
+            const subjectExam = (subjectExams || []).find(e => {
+              const dbSubject = String(e.subject || '').toLowerCase().replace(/\s+/g, ' ').trim();
+              const title = String(e.title || '').toLowerCase().replace(/\s+/g, ' ').trim();
+              return dbSubject === wanted || title === wanted ||
+                title === `${wanted} practice` || title.includes(`${wanted} practice`) ||
+                title.includes(wanted);
+            }) || null;
+
             if (!subjectExam) {
-              setMsg(`Admin configuration not found for ${exam.subject || exam.name.replace(' Practice', '')}. Please ask Admin to create/publish the subject exam configuration.`);
+              setMsg(`Admin configuration not found for ${requestedSubject}. Please ask Admin to create/publish the subject exam configuration.`);
               setLoading(false);
               return;
             }

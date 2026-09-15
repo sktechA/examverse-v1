@@ -39,3 +39,29 @@
 .blueprint-table th,.blueprint-table td{padding:8px 10px;border-bottom:1px solid #edf0f4;text-align:left}
 .blueprint-table th{background:#f8fafc;color:#64748b;font-weight:700}
 .log-terminal{background:#0f172a;color:#e2e8f0;border-radius:12px;padding:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:11px;line-height:1.6;max-height:280px;overflow-y:auto;margin-top:12px}
+
+/* V17 Exam Mode: full-screen, viewport-first candidate test UI */
+html:fullscreen, html:fullscreen body { width:100%; height:100%; overflow:hidden; }
+body.exam-in-progress { overflow:hidden !important; }
+.exam-in-progress .modal-bg { position:fixed !important; inset:0 !important; z-index:99999 !important; width:100vw !important; height:100dvh !important; min-height:100dvh !important; padding:0 !important; box-sizing:border-box; background:#f5f7fb; }
+.exam-in-progress .mock { width:100vw !important; max-width:none !important; height:100dvh !important; max-height:none !important; border-radius:0 !important; box-sizing:border-box; display:flex; flex-direction:column; }
+.exam-in-progress .mock-head { flex:0 0 auto; padding:14px 20px !important; }
+.exam-in-progress .mock-body { flex:1 1 auto; min-height:0; overflow:hidden; }
+.exam-in-progress .mock-body main { min-width:0; overflow:auto; padding:22px 28px !important; }
+.exam-in-progress .mock-body aside { overflow:auto; padding:18px !important; }
+.exam-in-progress .mock-body main h2 { font-size:clamp(18px, 1.45vw, 24px) !important; line-height:1.55 !important; }
+.exam-in-progress .mock-body main .question-hi { font-size:clamp(15px, 1.2vw, 19px) !important; }
+.exam-in-progress .option { font-size:clamp(14px, 1.1vw, 18px) !important; padding:14px 16px !important; }
+.exam-fullscreen-alert button { border:0; background:#273149; color:#fff; border-radius:8px; padding:8px 11px; font-weight:700; cursor:pointer; }
+@media(max-width:900px){
+  .exam-in-progress .mock-body { grid-template-columns:1fr !important; overflow:auto; }
+  .exam-in-progress .mock-body main { padding:16px !important; }
+  .exam-in-progress .mock-body aside { padding:12px 16px !important; }
+  .exam-in-progress .palette { max-height:130px; overflow:auto; }
+}
+@media(max-width:600px){
+  .exam-in-progress .mock-head { padding:10px 12px !important; }
+  .exam-in-progress .mock-head small { font-size:9px !important; }
+  .exam-in-progress .mock-body main h2 { font-size:17px !important; }
+  .exam-in-progress .option { font-size:14px !important; padding:12px !important; }
+}

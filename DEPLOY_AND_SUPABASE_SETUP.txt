@@ -1,0 +1,23 @@
+SKTech Exam Portal V17.1 - MASTER BUG FIX
+
+This release is a consolidated fix, not a screen-only patch.
+
+FIXES INCLUDED
+1. Universal TXT parser: numbered options 1)-4) are recognized before numbered question starts. This prevents option lines from becoming new questions and breaking question/answer mapping.
+2. Candidate attempt persistence fixed to use candidate_id, correct_count, wrong_count, skipped_count (matching the existing exam_attempts schema).
+3. Candidate dashboard reads only the logged-in candidate's attempts and uses the correct count columns.
+4. Published exam list requires both status='published' and published=true.
+5. DB exams will NOT silently run with fewer questions than Admin configured. If Admin config is 100 and only 30 valid questions are mapped, candidate sees an exam-not-ready message instead of a broken 30-question exam.
+6. Exam question mapping is subject-aware and derives subject from exam title when Admin leaves subject blank.
+7. Candidate exam question RPC/RLS only exposes questions from published exams.
+8. Invalid/dependent questions (for example “उसी व्यवस्था में…”) are quarantined instead of being published without context.
+9. Bulk approval uses the same strict publishability gate.
+10. Old bundled question seed data is NOT included in this release package.
+11. Master SQL is the only SQL migration included. Do not run the old v7-v16 schema files from previous ZIPs.
+
+SUPABASE
+Run only: SKTECH_V17_MASTER_BUG_FIX.sql
+Do not run old schema files from previous releases.
+
+DEPLOY
+Deploy this release to the existing Vercel project/repository after reviewing the changes.

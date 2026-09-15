@@ -51,6 +51,78 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
   const [showOne, setShowOne] = useState(false);
   const [result, setResult] = useState(null);
   const [startedAt] = useState(new Date().toISOString());
+  const [fullScreenWarning, setFullScreenWarning] = useState(false);
+
+  const enterExamFullscreen = async () => {
+    try {
+      const el = document.documentElement;
+      if (!document.fullscreenElement && el?.requestFullscreen) {
+        await el.requestFullscreen({ navigationUI: 'hide' });
+      }
+      setFullScreenWarning(false);
+    } catch (err) {
+      console.warn('Fullscreen request was not granted:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (loading || submitted || result) return;
+    enterExamFullscreen();
+
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement && !submitted) {
+        setFullScreenWarning(true);
+      }
+    };
+    const onBeforeUnload = (e) => {
+      if (!submitted) {
+        e.preventDefault();
+        e.returnValue = 'Exam is in progress. Please submit the exam before leaving.';
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden && !submitted) setFullScreenWarning(true);
+    };
+
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    document.body.classList.add('exam-in-progress');
+
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      document.body.classList.remove('exam-in-progress');
+    };
+  }, [loading, submitted, result]);
+
+  useEffect(() => {
+    if (submitted && document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
+  }, [submitted]);
+
+  useEffect(() => {
+    const blockKeys = (e) => {
+      if (submitted) return;
+      // Keep browser-level shortcuts usable where the browser refuses to block them,
+      // but prevent common in-app navigation/close shortcuts during an exam.
+      if ((e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) ||
+          (e.ctrlKey && (e.key.toLowerCase() === 'r' || e.key.toLowerCase() === 'w')) ||
+          e.key === 'F5') {
+        e.preventDefault();
+        setFullScreenWarning(true);
+      }
+    };
+    const blockContext = (e) => e.preventDefault();
+    window.addEventListener('keydown', blockKeys, true);
+    window.addEventListener('contextmenu', blockContext);
+    return () => {
+      window.removeEventListener('keydown', blockKeys, true);
+      window.removeEventListener('contextmenu', blockContext);
+    };
+  }, [submitted]);
 
   useEffect(() => {
     let live = true;
@@ -197,6 +269,17 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
           error = r.error;
         }
 
+        // A configured DB exam must have exactly the configured number of usable mapped questions.
+        // Never silently start a 100-question exam with 25/30 questions.
+        if (exam.id && !error && (data || []).length !== effectiveLimit) {
+          if (live) {
+            setQuestions([]);
+            setMsg(`Exam is not ready: Admin configured ${effectiveLimit} questions, but only ${(data || []).length} valid questions are mapped.`);
+            setLoading(false);
+          }
+          return;
+        }
+
         // Validate complete integrity of question records
         let validQuestions = (data || []).filter(
           x =>
@@ -274,18 +357,14 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
       try {
         await supabase.from('exam_attempts').insert({
           exam_id: exam.id || null,
-          user_id: session.user.id,
+          candidate_id: session.user.id,
           answers,
-          total_questions: questions.length,
-          attempted: questions.length - skipped,
-          correct,
-          wrong,
-          skipped,
+          correct_count: correct,
+          wrong_count: wrong,
+          skipped_count: skipped,
           score: finished.score,
-          percentage: finished.percentage,
           started_at: startedAt,
-          submitted_at: new Date().toISOString(),
-          status: 'completed'
+          submitted_at: new Date().toISOString()
         });
       } catch (err) {
         console.warn('Attempt could not be persisted:', err);
@@ -433,6 +512,17 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
             {String(time % 60).padStart(2, '0')}
           </strong>
         </div>
+
+        {fullScreenWarning && (
+          <div className="exam-alert exam-fullscreen-alert">
+            <span>🔒</span>
+            <div>
+              <b>Exam mode active</b>
+              <small>Exam screen should remain open. Return to this window and continue the test.</small>
+            </div>
+            <button onClick={enterExamFullscreen}>Return to Full Screen</button>
+          </div>
+        )}
 
         {(showFive || showOne) && (
           <div className="exam-alert">

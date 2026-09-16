@@ -84,13 +84,13 @@ async function handler(req, res) {
   try {
     const {
       examTitle = 'IBPS RRB PO',
-      action = 'preview', // 'preview' or 'publish'
+      action: requestedAction = 'preview', // 'preview' or 'publish'
       mockCount = 1,
       blueprint = null,
       blueprintKey = null,
       publishNow = false
     } = req.body || {};
-    if (publishNow) action = 'publish';
+    const action = publishNow ? 'publish' : requestedAction;
 
     const selectedBlueprint = blueprint || BLUEPRINT_PRESETS[examTitle] || BLUEPRINT_PRESETS[blueprintKey] || {
       title: `${examTitle} Practice Mock`,

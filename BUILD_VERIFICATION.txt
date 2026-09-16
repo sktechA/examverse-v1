@@ -1,0 +1,13 @@
+SKTech Exam Portal - Build Verification
+
+Fixed Vercel build blocker:
+- api/mock-generator.js: const action was reassigned. It now uses requestedAction and derives a new const action.
+
+Checks completed in this environment:
+- node --check api/*.js: PASS
+- question integrity suite: 10/10 PASS
+- searched SQL for literal "candidate id": none found; candidate_id is used.
+- searched API source for OpenAI runtime calls: none in current api/ directory.
+
+Note:
+- A full `npm run build` could not be executed in this offline environment because dependencies could not be downloaded. Vercel should run the normal npm install + npm run build using package.json.

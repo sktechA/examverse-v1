@@ -3,8 +3,7 @@ import {
   validateQuestionDeterministic,
   normalizeText,
   isSubjectStrictMatch,
-  verifyAdminAuth,
-  withApiLogging
+  verifyAdminAuth
 } from './_shared.js';
 import dailySchedulerHandler, {
   generateGeminiQuestionsForSubject,
@@ -553,15 +552,14 @@ export async function runIntegrityTestSuite() {
   }
 
   report.total = report.tests.length;
-  report.ok = report.failed === 0;
-  report.summary = `${report.passed}/${report.total} tests passed, ${report.failed} failed`;
-  report.details = report.tests;
 
   return report;
 }
 
-async function handler(req, res) {
-  const sb = getSupabaseAdmin();
+export default async function handler(req, res) {
+  console.info('[INTEGRITY] Test request started');
+  const sb = getSupabaseAdmin(req);
+  console.info('[INTEGRITY] DB client:', sb ? 'CREATED' : 'FAILED');
   if (req && res) {
     // Admin Authorization Check (Requirement 11)
     const auth = await verifyAdminAuth(req, sb);
@@ -591,5 +589,3 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exit(r.failed === 0 ? 0 : 1);
   });
 }
-
-export default withApiLogging(handler, 'question-integrity-test');

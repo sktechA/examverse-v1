@@ -6,8 +6,7 @@ import {
   validateQuestionDeterministic,
   isSubjectStrictMatch,
   normalizeText,
-  verifyAdminAuth,
-  withApiLogging
+  verifyAdminAuth
 } from './_shared.js';
 import syncCurrentAffairsHandler from './sync-current-affairs.js';
 import mockGeneratorHandler from './mock-generator.js';
@@ -235,17 +234,17 @@ Return JSON in this EXACT structure:
   return Array.isArray(parsed.reviews) ? parsed.reviews : [];
 }
 
-async function handler(req, res) {
+export default async function handler(req, res) {
   const isInternalCall = typeof req === 'string' || req?.isInternal;
   const todayStr = getKolkataDateString();
   const timeStr = getKolkataTimeString();
   const jobKey = `daily_pipeline_${todayStr}_kolkata`;
 
-  const sb = getSupabaseAdmin();
+  const sb = getSupabaseAdmin(req);
   const isDryRun = Boolean(req?.body?.dryRun);
 
   if (!sb && !isDryRun) {
-    const errResp = { ok: false, error: 'Database connection unavailable' };
+    const errResp = { ok: false, error: 'Database server configuration unavailable' };
     return res ? res.status(500).json(errResp) : errResp;
   }
 
@@ -740,5 +739,3 @@ export {
   runGeminiReviewBatch,
   loadLocalSeedQuestions
 };
-
-export default withApiLogging(handler, 'daily-scheduler');

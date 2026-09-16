@@ -3,18 +3,17 @@ import {
   getGeminiClient,
   normalizeText,
   validateQuestionDeterministic,
-  verifyAdminAuth,
-  withApiLogging
+  verifyAdminAuth
 } from './_shared.js';
 
-async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'POST required' });
   }
 
-  const sb = getSupabaseAdmin();
+  const sb = getSupabaseAdmin(req);
   if (!sb) {
-    return res.status(500).json({ error: 'Database connection unavailable' });
+    return res.status(500).json({ error: 'Database server configuration unavailable' });
   }
 
   // Authorization Check
@@ -271,5 +270,3 @@ Return JSON:
     });
   }
 }
-
-export default withApiLogging(handler, 'gemini-validate');

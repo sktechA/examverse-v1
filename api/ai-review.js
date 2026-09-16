@@ -3,8 +3,7 @@ import {
   getGeminiClient,
   normalizeText,
   validateQuestionDeterministic,
-  verifyAdminAuth,
-  withApiLogging
+  verifyAdminAuth
 } from './_shared.js';
 
 async function writeLog(sb, level, source, action, message, details = {}, user_id = null) {
@@ -67,14 +66,14 @@ Return JSON only in format:
   return Array.isArray(parsed.reviews) ? parsed.reviews : [];
 }
 
-async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'POST required' });
   }
 
-  const sb = getSupabaseAdmin();
+  const sb = getSupabaseAdmin(req);
   if (!sb) {
-    return res.status(500).json({ ok: false, error: 'Database connection unavailable' });
+    return res.status(500).json({ ok: false, error: 'Database server configuration unavailable' });
   }
 
   // 1. Admin Authorization Verification
@@ -283,5 +282,3 @@ async function handler(req, res) {
     return res.status(500).json({ ok: false, error: err?.message || 'AI review process failed' });
   }
 }
-
-export default withApiLogging(handler, 'ai-review');

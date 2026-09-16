@@ -1,13 +1,16 @@
-import { getSupabaseAdmin, verifyAdminAuth, withApiLogging } from './_shared.js';
+import { getSupabaseAdmin, verifyAdminAuth } from './_shared.js';
 
-async function handler(req, res) {
-  const sb = getSupabaseAdmin();
+export default async function handler(req, res) {
+  console.info('[AUTOMATION] Request:', req?.method || 'UNKNOWN');
+  const sb = getSupabaseAdmin(req);
   if (!sb) {
-    return res.status(500).json({ error: 'Database connection unavailable' });
+    console.error('[DB] Connection client creation FAILED');
+    return res.status(500).json({ error: 'Database server configuration unavailable' });
   }
 
   // Admin Authorization check (Requirement 11)
   const auth = await verifyAdminAuth(req, sb);
+  console.info('[AUTH] Admin verification:', JSON.stringify({ ok: !!auth.ok, role: auth.role || null, statusCode: auth.statusCode || null, error: auth.error || null }));
   if (!auth.ok) {
     return res.status(auth.statusCode || 401).json({ error: auth.error });
   }
@@ -29,15 +32,12 @@ async function handler(req, res) {
 
       return res.status(200).json({
         ok: true,
-        settings: config ? { ...config, daily_ca_target: config.current_affairs_target, daily_scheduler_enabled: config.daily_automation_enabled, synthesis_mode_enabled: false } : {
+        settings: config || {
           daily_question_target: 1000,
           current_affairs_target: 150,
-          daily_ca_target: 150,
           auto_approval_threshold: 0.93,
           gemini_ai_enabled: process.env.GEMINI_AI_ENABLED === 'true',
           daily_automation_enabled: true,
-           daily_scheduler_enabled: true,
-           synthesis_mode_enabled: false,
           default_mock_questions: 80,
           default_mock_count: 5,
           difficulty_ratio: { easy: 30, moderate: 50, hard: 20 },
@@ -67,10 +67,10 @@ async function handler(req, res) {
         .upsert({
           id: 'default_config',
           daily_question_target: Number(updates.daily_question_target) || 1000,
-          current_affairs_target: Number(updates.current_affairs_target ?? updates.daily_ca_target) || 150,
+          current_affairs_target: Number(updates.current_affairs_target) || 150,
           auto_approval_threshold: Number(updates.auto_approval_threshold) || 0.93,
           gemini_ai_enabled: Boolean(updates.gemini_ai_enabled),
-          daily_automation_enabled: Boolean(updates.daily_automation_enabled ?? updates.daily_scheduler_enabled),
+          daily_automation_enabled: Boolean(updates.daily_automation_enabled),
           default_mock_questions: Number(updates.default_mock_questions) || 80,
           default_mock_count: Number(updates.default_mock_count) || 5,
           difficulty_ratio: updates.difficulty_ratio || { easy: 30, moderate: 50, hard: 20 },
@@ -81,7 +81,11 @@ async function handler(req, res) {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('[AUTOMATION] Save FAILED:', JSON.stringify({ code: error.code || null, message: error.message || null, details: error.details || null, hint: error.hint || null }));
+        throw error;
+      }
+      console.info('[AUTOMATION] Save PASS');
       return res.status(200).json({ ok: true, settings: data });
     } catch (err) {
       return res.status(500).json({ ok: false, error: err.message });
@@ -90,5 +94,3 @@ async function handler(req, res) {
 
   return res.status(405).json({ error: 'Method not allowed' });
 }
-
-export default withApiLogging(handler, 'automation-settings');

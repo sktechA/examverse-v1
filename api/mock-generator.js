@@ -1,8 +1,7 @@
 import {
   getSupabaseAdmin,
   isSubjectStrictMatch,
-  verifyAdminAuth,
-  withApiLogging
+  verifyAdminAuth
 } from './_shared.js';
 
 export const BLUEPRINT_PRESETS = {
@@ -65,14 +64,14 @@ export const BLUEPRINT_PRESETS = {
   }
 };
 
-async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'POST required' });
   }
 
-  const sb = getSupabaseAdmin();
+  const sb = getSupabaseAdmin(req);
   if (!sb) {
-    return res.status(500).json({ error: 'Database connection unavailable' });
+    return res.status(500).json({ error: 'Database server configuration unavailable' });
   }
 
   // Authorization Check
@@ -84,15 +83,12 @@ async function handler(req, res) {
   try {
     const {
       examTitle = 'IBPS RRB PO',
-      action: requestedAction = 'preview', // 'preview' or 'publish'
+      action = 'preview', // 'preview' or 'publish'
       mockCount = 1,
-      blueprint = null,
-      blueprintKey = null,
-      publishNow = false
+      blueprint = null
     } = req.body || {};
-    const action = publishNow ? 'publish' : requestedAction;
 
-    const selectedBlueprint = blueprint || BLUEPRINT_PRESETS[examTitle] || BLUEPRINT_PRESETS[blueprintKey] || {
+    const selectedBlueprint = blueprint || BLUEPRINT_PRESETS[examTitle] || {
       title: `${examTitle} Practice Mock`,
       total_questions: 50,
       duration_minutes: 45,
@@ -108,7 +104,7 @@ async function handler(req, res) {
       .select('id, question, option_a, option_b, option_c, option_d, correct_answer, explanation, subject, topic, difficulty, exam')
       .eq('status', 'approved')
       .order('created_at', { ascending: false })
-      .limit(10000);
+      .limit(1000);
 
     if (poolErr) throw poolErr;
 
@@ -177,15 +173,6 @@ async function handler(req, res) {
     // If 'publish' action was requested, insert into exams and exam_questions tables
     const publishedExams = [];
     if (action === 'publish') {
-      const incomplete = generatedMocks.filter(m => m.total_questions !== m.required_questions);
-      if (incomplete.length) {
-        return res.status(409).json({
-          ok: false,
-          error: 'Mock cannot be published because the approved question bank does not contain the exact required questions for every section.',
-          shortages,
-          mocks: generatedMocks.map(g => ({title:g.title, questions_count:g.total_questions, required_count:g.required_questions, has_shortage:g.has_shortage}))
-        });
-      }
       for (const mock of generatedMocks) {
         // Insert exam with exact database configuration (Requirement 8)
         const { data: newExam, error: exErr } = await sb
@@ -199,7 +186,6 @@ async function handler(req, res) {
             negative_marking: mock.negative_marking,
             randomize_questions: true,
             status: 'published',
-            published: true,
             exam_type: 'mock',
             created_at: new Date().toISOString()
           })
@@ -251,5 +237,3 @@ async function handler(req, res) {
     });
   }
 }
-
-export default withApiLogging(handler, 'mock-generator');

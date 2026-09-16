@@ -4,8 +4,7 @@ import {
   OFFICIAL_SOURCES,
   getKolkataDateString,
   validateQuestionDeterministic,
-  verifyAdminAuth,
-  withApiLogging
+  verifyAdminAuth
 } from './_shared.js';
 import crypto from 'node:crypto';
 
@@ -112,14 +111,14 @@ async function fetchRealOfficialBulletins(sources = OFFICIAL_SOURCES) {
   return { bulletins, fetchStatus };
 }
 
-async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== 'POST' && req.method !== 'GET') {
     return res.status(405).json({ error: 'GET or POST required' });
   }
 
-  const sb = getSupabaseAdmin();
+  const sb = getSupabaseAdmin(req);
   if (!sb) {
-    return res.status(500).json({ error: 'Database connection unavailable' });
+    return res.status(500).json({ error: 'Database server configuration unavailable' });
   }
 
   // Authorization Check
@@ -292,5 +291,3 @@ RULES:
     });
   }
 }
-
-export default withApiLogging(handler, 'sync-current-affairs');

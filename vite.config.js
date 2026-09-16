@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 
 // Server-side handlers
 import adminCreateUserHandler from './api/admin-create-user.js';
+import aiRepairHandler from './api/ai-repair.js';
 import aiReviewHandler from './api/ai-review.js';
 import geminiValidateHandler from './api/gemini-validate.js';
 import mockGeneratorHandler from './api/mock-generator.js';
@@ -10,16 +11,20 @@ import syncCurrentAffairsHandler from './api/sync-current-affairs.js';
 import dailySchedulerHandler from './api/daily-scheduler.js';
 import automationSettingsHandler from './api/automation-settings.js';
 import questionIntegrityHandler from './api/question-integrity-test.js';
+import bilingualTranslateHandler from './api/bilingual-translate.js';
 
 const apiRoutes = {
   '/api/admin-create-user': adminCreateUserHandler,
+  '/api/admin-manage-user': adminCreateUserHandler,
+  '/api/ai-repair': aiRepairHandler,
   '/api/ai-review': aiReviewHandler,
   '/api/gemini-validate': geminiValidateHandler,
   '/api/mock-generator': mockGeneratorHandler,
   '/api/sync-current-affairs': syncCurrentAffairsHandler,
   '/api/daily-scheduler': dailySchedulerHandler,
   '/api/automation-settings': automationSettingsHandler,
-  '/api/question-integrity-test': questionIntegrityHandler
+  '/api/question-integrity-test': questionIntegrityHandler,
+  '/api/bilingual-translate': bilingualTranslateHandler
 };
 
 function apiMiddlewarePlugin() {

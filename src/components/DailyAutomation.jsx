@@ -13,22 +13,40 @@ import {
 } from 'lucide-react';
 
 export default function DailyAutomation({ supabase, session }) {
-  const [settings, setSettings] = useState({
-    daily_question_target: 1000,
-    daily_ca_target: 150,
-    auto_approval_threshold: 0.93,
-    gemini_ai_enabled: false,
-    daily_scheduler_enabled: true,
-    synthesis_mode_enabled: false,
-    subject_quotas: {
-      Reasoning: 250,
-      Mathematics: 250,
-      'General Awareness': 200,
-      'Banking Awareness': 150,
-      Computer: 80,
-      English: 70
-    }
-  });
+  const getInitialSettings = () => {
+    const defaults = {
+      daily_question_target: 1000,
+      daily_ca_target: 150,
+      auto_approval_threshold: 0.93,
+      gemini_ai_enabled: false,
+      daily_scheduler_enabled: true,
+      synthesis_mode_enabled: false,
+      preferred_ai_model: 'gemini-3.8-flash',
+      generation_schedule: '00:00:00 Asia/Kolkata',
+      ca_ingestion_enabled: true,
+      mock_generation_enabled: true,
+      default_mock_questions: 80,
+      default_mock_count: 5,
+      subject_quotas: {
+        Reasoning: 250,
+        Mathematics: 250,
+        'General Awareness': 200,
+        'Banking Awareness': 150,
+        Computer: 80,
+        English: 70
+      }
+    };
+    try {
+      const cached = localStorage.getItem('sktech_automation_settings_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        return { ...defaults, ...parsed };
+      }
+    } catch (_) {}
+    return defaults;
+  };
+
+  const [settings, setSettings] = useState(getInitialSettings);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [runningJob, setRunningJob] = useState(false);
@@ -36,15 +54,6 @@ export default function DailyAutomation({ supabase, session }) {
   const [testResult, setTestResult] = useState(null);
   const [msg, setMsg] = useState('');
   const [currentTimeKolkata, setCurrentTimeKolkata] = useState('');
-
-  useEffect(() => {
-    try {
-      const savedSynthesis = localStorage.getItem('sktech_automation_synthesis_mode');
-      if (savedSynthesis !== null) {
-        setSettings(prev => ({ ...prev, synthesis_mode_enabled: savedSynthesis === 'true' }));
-      }
-    } catch (_) {}
-  }, []);
 
   // Clock for Asia/Kolkata
   useEffect(() => {
@@ -68,21 +77,73 @@ export default function DailyAutomation({ supabase, session }) {
   const loadData = async () => {
     setLoading(true);
     try {
-      // Fetch settings
-      const token = (await supabase?.auth?.getSession())?.data?.session?.access_token || '';
-      const res = await fetch('/api/automation-settings', { headers: { Authorization: `Bearer ${token}` } });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.settings) {
-          const saved = json.settings;
-          setSettings(prev => ({
+      let saved = null;
+      // Fetch settings via API
+      try {
+        const token = (await supabase?.auth?.getSession())?.data?.session?.access_token || '';
+        const res = await fetch('/api/automation-settings', { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.settings) {
+            saved = json.settings;
+          }
+        }
+      } catch (err) {
+        console.warn('API settings fetch warning:', err);
+      }
+
+      // Supabase direct fallback if API unreachable or returns null
+      if (!saved && supabase) {
+        try {
+          const { data: dbConfig } = await supabase
+            .from('automation_settings')
+            .select('*')
+            .eq('id', 'default_config')
+            .maybeSingle();
+          if (dbConfig) {
+            const extraPrefs = dbConfig.exam_quotas?.__preferences || {};
+            saved = {
+              ...dbConfig,
+              daily_ca_target: Number(dbConfig.current_affairs_target ?? dbConfig.daily_ca_target ?? 150),
+              daily_scheduler_enabled: dbConfig.daily_automation_enabled ?? dbConfig.daily_scheduler_enabled ?? true,
+              preferred_ai_model: extraPrefs.preferred_ai_model || 'gemini-3.8-flash',
+              generation_schedule: extraPrefs.generation_schedule || '00:00:00 Asia/Kolkata',
+              ca_ingestion_enabled: extraPrefs.ca_ingestion_enabled !== false,
+              synthesis_mode_enabled: Boolean(extraPrefs.synthesis_mode_enabled),
+              mock_generation_enabled: extraPrefs.mock_generation_enabled !== false,
+              default_mock_questions: Number(dbConfig.default_mock_questions) || 80,
+              default_mock_count: Number(dbConfig.default_mock_count) || 5
+            };
+          }
+        } catch (dbErr) {
+          console.warn('Direct DB settings fetch warning:', dbErr);
+        }
+      }
+
+      if (saved) {
+        setSettings(prev => {
+          const next = {
             ...prev,
             ...saved,
+            daily_question_target: Number(saved.daily_question_target ?? prev.daily_question_target),
             daily_ca_target: Number(saved.daily_ca_target ?? saved.current_affairs_target ?? prev.daily_ca_target),
+            auto_approval_threshold: Number(saved.auto_approval_threshold ?? prev.auto_approval_threshold),
             daily_scheduler_enabled: saved.daily_scheduler_enabled ?? saved.daily_automation_enabled ?? prev.daily_scheduler_enabled,
+            gemini_ai_enabled: Boolean(saved.gemini_ai_enabled ?? prev.gemini_ai_enabled),
+            synthesis_mode_enabled: Boolean(saved.synthesis_mode_enabled ?? prev.synthesis_mode_enabled),
+            ca_ingestion_enabled: saved.ca_ingestion_enabled !== undefined ? Boolean(saved.ca_ingestion_enabled) : prev.ca_ingestion_enabled,
+            mock_generation_enabled: saved.mock_generation_enabled !== undefined ? Boolean(saved.mock_generation_enabled) : prev.mock_generation_enabled,
+            preferred_ai_model: saved.preferred_ai_model || prev.preferred_ai_model,
+            generation_schedule: saved.generation_schedule || prev.generation_schedule,
+            default_mock_questions: Number(saved.default_mock_questions || prev.default_mock_questions),
+            default_mock_count: Number(saved.default_mock_count || prev.default_mock_count),
             subject_quotas: saved.subject_quotas || prev.subject_quotas
-          }));
-        }
+          };
+          try {
+            localStorage.setItem('sktech_automation_settings_cache', JSON.stringify(next));
+          } catch (_) {}
+          return next;
+        });
       }
 
       // Fetch logs from Supabase
@@ -109,23 +170,39 @@ export default function DailyAutomation({ supabase, session }) {
     setLoading(true);
     setMsg('');
     try {
+      const token = (await supabase?.auth?.getSession())?.data?.session?.access_token || '';
       const res = await fetch('/api/automation-settings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(await supabase?.auth?.getSession())?.data?.session?.access_token || ''}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(settings)
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save settings');
       if (data.settings) {
         const saved = data.settings;
-        setSettings(prev => ({
-          ...prev,
-          ...saved,
-          daily_ca_target: Number(saved.daily_ca_target ?? saved.current_affairs_target ?? prev.daily_ca_target),
-          daily_scheduler_enabled: saved.daily_scheduler_enabled ?? saved.daily_automation_enabled ?? prev.daily_scheduler_enabled,
-          synthesis_mode_enabled: saved.synthesis_mode_enabled ?? prev.synthesis_mode_enabled,
-          subject_quotas: saved.subject_quotas || prev.subject_quotas
-        }));
+        setSettings(prev => {
+          const next = {
+            ...prev,
+            ...saved,
+            daily_question_target: Number(saved.daily_question_target ?? prev.daily_question_target),
+            daily_ca_target: Number(saved.daily_ca_target ?? saved.current_affairs_target ?? prev.daily_ca_target),
+            auto_approval_threshold: Number(saved.auto_approval_threshold ?? prev.auto_approval_threshold),
+            daily_scheduler_enabled: saved.daily_scheduler_enabled ?? saved.daily_automation_enabled ?? prev.daily_scheduler_enabled,
+            gemini_ai_enabled: Boolean(saved.gemini_ai_enabled ?? prev.gemini_ai_enabled),
+            synthesis_mode_enabled: Boolean(saved.synthesis_mode_enabled ?? prev.synthesis_mode_enabled),
+            ca_ingestion_enabled: saved.ca_ingestion_enabled !== undefined ? Boolean(saved.ca_ingestion_enabled) : prev.ca_ingestion_enabled,
+            mock_generation_enabled: saved.mock_generation_enabled !== undefined ? Boolean(saved.mock_generation_enabled) : prev.mock_generation_enabled,
+            preferred_ai_model: saved.preferred_ai_model || prev.preferred_ai_model,
+            generation_schedule: saved.generation_schedule || prev.generation_schedule,
+            default_mock_questions: Number(saved.default_mock_questions || prev.default_mock_questions),
+            default_mock_count: Number(saved.default_mock_count || prev.default_mock_count),
+            subject_quotas: saved.subject_quotas || prev.subject_quotas
+          };
+          try {
+            localStorage.setItem('sktech_automation_settings_cache', JSON.stringify(next));
+          } catch (_) {}
+          return next;
+        });
       }
       setMsg('Settings updated successfully in database.');
     } catch (e) {
@@ -371,12 +448,89 @@ export default function DailyAutomation({ supabase, session }) {
             <select
               value={settings.synthesis_mode_enabled ? 'true' : 'false'}
               onChange={e =>
-                setSettings(prev => { const value = e.target.value === 'true'; try { localStorage.setItem('sktech_automation_synthesis_mode', String(value)); } catch (_) {} return { ...prev, synthesis_mode_enabled: value }; })
+                setSettings(prev => ({ ...prev, synthesis_mode_enabled: e.target.value === 'true' }))
               }
             >
               <option value="false">Disabled (Strict: Use Existing Approved Questions)</option>
               <option value="true">Enabled (Auto-synthesize new questions)</option>
             </select>
+          </label>
+
+          <label>
+            Preferred AI Engine / Model
+            <select
+              value={settings.preferred_ai_model || 'gemini-3.8-flash'}
+              onChange={e =>
+                setSettings({ ...settings, preferred_ai_model: e.target.value })
+              }
+            >
+              <option value="gemini-3.8-flash">Gemini 3.8 Flash (High Speed / Verified Accuracy)</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+            </select>
+          </label>
+
+          <label>
+            Generation Schedule (Timezone: Asia/Kolkata)
+            <input
+              type="text"
+              value={settings.generation_schedule || '00:00:00 Asia/Kolkata'}
+              onChange={e =>
+                setSettings({ ...settings, generation_schedule: e.target.value })
+              }
+            />
+          </label>
+
+          <label>
+            Current Affairs Ingestion Feed
+            <select
+              value={settings.ca_ingestion_enabled !== false ? 'true' : 'false'}
+              onChange={e =>
+                setSettings({ ...settings, ca_ingestion_enabled: e.target.value === 'true' })
+              }
+            >
+              <option value="true">Enabled (PIB, RBI, SEBI, NABARD, MP Portals)</option>
+              <option value="false">Disabled (Pause CA Ingestion)</option>
+            </select>
+          </label>
+
+          <label>
+            Automatic Mock Test Generation
+            <select
+              value={settings.mock_generation_enabled !== false ? 'true' : 'false'}
+              onChange={e =>
+                setSettings({ ...settings, mock_generation_enabled: e.target.value === 'true' })
+              }
+            >
+              <option value="true">Enabled (Generate daily fresh mocks from approved pool)</option>
+              <option value="false">Disabled (Manual Mock Creation Only)</option>
+            </select>
+          </label>
+
+          <label>
+            Mock Test Size (Questions per Mock)
+            <input
+              type="number"
+              min="10"
+              max="200"
+              value={settings.default_mock_questions || 80}
+              onChange={e =>
+                setSettings({ ...settings, default_mock_questions: Number(e.target.value) })
+              }
+            />
+          </label>
+
+          <label>
+            Daily Mocks Target Count
+            <input
+              type="number"
+              min="1"
+              max="50"
+              value={settings.default_mock_count || 5}
+              onChange={e =>
+                setSettings({ ...settings, default_mock_count: Number(e.target.value) })
+              }
+            />
           </label>
         </div>
 

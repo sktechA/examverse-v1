@@ -12,6 +12,7 @@ export interface Question {
   option_d_hi?: string;
   correct_answer: 'A' | 'B' | 'C' | 'D';
   explanation?: string;
+  explanation_hi?: string;
   subject: string;
   topic?: string;
   subtopic?: string;

@@ -1,6 +1,8 @@
 import {
   getSupabaseAdmin,
   getGeminiClient,
+  callGeminiWithRetry,
+  getNormalizedGeminiModel,
   getKolkataDateString,
   getKolkataTimeString,
   validateQuestionDeterministic,
@@ -112,10 +114,10 @@ function loadLocalSeedQuestions(limit = 1000) {
 /**
  * Server-side Gemini Question Generation for a specific subject
  * Uses model: gemini-3.8-flash
- * Strictly generates valid questions aligned with competitive exam syllabus
- * Timeout: 20 seconds
+ * Wrapped with timeout promise and exponential backoff retry mechanism (max 3 retries)
+ * for 503 errors and transient timeouts.
  */
-async function generateGeminiQuestionsForSubject(gemini, subject, count = 10) {
+async function generateGeminiQuestionsForSubject(gemini, subject, count = 10, retryOptions = {}) {
   const topics = SYLLABUS_TOPICS[subject] || ['General Syllabus Practice'];
   const topicList = topics.join(', ');
 
@@ -128,38 +130,51 @@ CRITICAL INVARIANTS:
    - If Subject is "Mathematics", generate ONLY quantitative/arithmetic problems (no reasoning or logic puzzles).
    - If Subject is "Reasoning", generate ONLY analytical/logical reasoning problems (no quantitative arithmetic).
 2. Exactly 4 distinct, plausible, mutually exclusive options (option_a, option_b, option_c, option_d). Never duplicate options.
-3. Exactly ONE unambiguous correct answer, specified strictly as "A", "B", "C", or "D".
-4. Thorough educational explanation explaining why that answer is correct step-by-step.
-5. Difficulty: Moderate.
-6. Never output placeholder, incomplete, or synthetic filler text.
+3. Bilingual Question & Solution:
+   - Provide the problem statement in English ("question") AND in Hindi ("question_hi").
+   - Provide options in English ("option_a", "option_b", "option_c", "option_d") AND in Hindi ("option_a_hi", "option_b_hi", "option_c_hi", "option_d_hi").
+   - Provide the educational step-by-step solution in English ("explanation") AND in Hindi ("explanation_hi").
+4. Exactly ONE unambiguous correct answer, specified strictly as "A", "B", "C", or "D".
+5. Thorough educational explanation explaining why that answer is correct step-by-step.
+6. Difficulty: Moderate.
+7. Never output placeholder, incomplete, or synthetic filler text.
 
 Return JSON in this EXACT schema:
 {
   "questions": [
     {
-      "question": "Clear problem statement",
-      "option_a": "Option A text",
-      "option_b": "Option B text",
-      "option_c": "Option C text",
-      "option_d": "Option D text",
+      "question": "Clear problem statement in English",
+      "question_hi": "हिंदी में स्पष्ट प्रश्न",
+      "option_a": "Option A in English",
+      "option_b": "Option B in English",
+      "option_c": "Option C in English",
+      "option_d": "Option D in English",
+      "option_a_hi": "विकल्प A हिंदी में",
+      "option_b_hi": "विकल्प B हिंदी में",
+      "option_c_hi": "विकल्प C हिंदी में",
+      "option_d_hi": "विकल्प D हिंदी में",
       "correct_answer": "A",
-      "explanation": "Detailed step-by-step solution",
+      "explanation": "Detailed step-by-step solution in English",
+      "explanation_hi": "विस्तृत चरण-दर-चरण समाधान हिंदी में",
       "topic": "Syllabus topic name",
       "difficulty": "Moderate"
     }
   ]
 }`;
 
-  const response = await Promise.race([
-    gemini.models.generateContent({
-      model: process.env.GEMINI_REVIEW_MODEL_ID || 'gemini-3.8-flash',
+  const response = await callGeminiWithRetry(
+    () => gemini.models.generateContent({
+      model: getNormalizedGeminiModel(process.env.GEMINI_REVIEW_MODEL_ID),
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: { responseMimeType: 'application/json' }
     }),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`Gemini question generation timed out for ${subject}`)), 20000)
-    )
-  ]);
+    {
+      timeoutMs: retryOptions.timeoutMs || 20000,
+      maxRetries: retryOptions.maxRetries !== undefined ? retryOptions.maxRetries : 3,
+      initialDelayMs: retryOptions.initialDelayMs || (retryOptions.testMode ? 15 : 1000),
+      operationName: `Gemini Question Generation (${subject})`
+    }
+  );
 
   const parsed = JSON.parse(response.text || '{}');
   return Array.isArray(parsed.questions) ? parsed.questions : [];
@@ -168,9 +183,10 @@ Return JSON in this EXACT schema:
 /**
  * Gemini Review Pipeline Batching
  * Verifies factual accuracy, option plausibility, correct answer veracity, and subject alignment.
- * Timeout: 20 seconds
+ * Wrapped with timeout promise and exponential backoff retry mechanism (max 3 retries)
+ * for 503 errors and transient timeouts.
  */
-async function runGeminiReviewBatch(gemini, batch, threshold = 0.93) {
+async function runGeminiReviewBatch(gemini, batch, threshold = 0.93, retryOptions = {}) {
   const prompt = `You are a strict competitive-exam question quality controller.
 Review each question independently for:
 1. Factual and mathematical correctness.
@@ -214,9 +230,9 @@ Return JSON in this EXACT structure:
     topic: q.topic
   }));
 
-  const response = await Promise.race([
-    gemini.models.generateContent({
-      model: process.env.GEMINI_REVIEW_MODEL_ID || 'gemini-3.8-flash',
+  const response = await callGeminiWithRetry(
+    () => gemini.models.generateContent({
+      model: getNormalizedGeminiModel(process.env.GEMINI_REVIEW_MODEL_ID),
       contents: [
         { role: 'user', parts: [
           { text: prompt },
@@ -225,10 +241,13 @@ Return JSON in this EXACT structure:
       ],
       config: { responseMimeType: 'application/json' }
     }),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Gemini batch review timed out')), 20000)
-    )
-  ]);
+    {
+      timeoutMs: retryOptions.timeoutMs || 20000,
+      maxRetries: retryOptions.maxRetries !== undefined ? retryOptions.maxRetries : 3,
+      initialDelayMs: retryOptions.initialDelayMs || (retryOptions.testMode ? 15 : 1000),
+      operationName: 'Gemini Batch Review'
+    }
+  );
 
   const parsed = JSON.parse(response.text || '{}');
   return Array.isArray(parsed.reviews) ? parsed.reviews : [];
@@ -285,6 +304,12 @@ export default async function handler(req, res) {
     const effectiveTarget = Number(req?.body?.target || config.daily_question_target || 1000);
     const forceAiReview = req?.body?.forceAiReview === true;
     const integrityTestMode = req?.body?.testMode === true;
+    const retryOptions = {
+      testMode: integrityTestMode,
+      initialDelayMs: integrityTestMode ? 15 : 1000,
+      timeoutMs: integrityTestMode ? 5000 : 20000,
+      maxRetries: 3
+    };
     const allowTestGemini = integrityTestMode && Boolean(req?.geminiClient || req?.body?.geminiClient);
     const isAiConfigured = (allowTestGemini || !integrityTestMode) && (process.env.GEMINI_AI_ENABLED === 'true' || config.gemini_ai_enabled === true || req?.body?.gemini_ai_enabled === true || req?.body?.enableAi === true || forceAiReview);
     const gemini = req?.geminiClient || req?.body?.geminiClient || (isAiConfigured ? getGeminiClient() : null);
@@ -454,22 +479,28 @@ export default async function handler(req, res) {
 
         const batchNeeded = Math.min(10, remainingTarget - candidateQuestions.length);
         try {
-          const generatedList = await generateGeminiQuestionsForSubject(gemini, targetSubject, batchNeeded);
+          const generatedList = await generateGeminiQuestionsForSubject(gemini, targetSubject, batchNeeded, retryOptions);
           for (const gq of generatedList) {
             if (candidateQuestions.length >= remainingTarget) break;
 
             const qRecord = {
               question: gq.question,
+              question_hi: gq.question_hi || null,
               option_a: gq.option_a,
               option_b: gq.option_b,
               option_c: gq.option_c,
               option_d: gq.option_d,
+              option_a_hi: gq.option_a_hi || null,
+              option_b_hi: gq.option_b_hi || null,
+              option_c_hi: gq.option_c_hi || null,
+              option_d_hi: gq.option_d_hi || null,
               correct_answer: gq.correct_answer,
               explanation: gq.explanation || '',
+              explanation_hi: gq.explanation_hi || null,
               subject: targetSubject,
               topic: gq.topic || 'Syllabus Standard',
               difficulty: gq.difficulty || 'Moderate',
-              language: 'en',
+              language: gq.question_hi ? 'English + Hindi' : 'en',
               exam: 'Competitive Exam Bank',
               daily_job_key: jobKey
             };
@@ -537,7 +568,7 @@ export default async function handler(req, res) {
       for (let i = 0; i < candidateQuestions.length; i += BATCH_SIZE) {
         const batch = candidateQuestions.slice(i, i + BATCH_SIZE);
         try {
-          const reviews = await runGeminiReviewBatch(gemini, batch, threshold);
+          const reviews = await runGeminiReviewBatch(gemini, batch, threshold, retryOptions);
 
           for (let idx = 0; idx < batch.length; idx++) {
             const q = batch[idx];

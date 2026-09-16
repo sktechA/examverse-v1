@@ -6,6 +6,50 @@ function cleanAnswer(v = '') {
   return m ? m[1].toUpperCase() : String(v).trim().toUpperCase().slice(0, 1);
 }
 
+function getBilingualPair(enVal, hiVal) {
+  let en = String(enVal || '').trim();
+  let hi = String(hiVal || '').trim();
+
+  const checkSlash = (str) => {
+    if (str && (str.includes('/') || str.includes('|'))) {
+      const parts = str.split(/\s*[\/|]\s*/);
+      if (parts.length >= 2) {
+        const p1 = parts[0].trim();
+        const p2 = parts.slice(1).join(' / ').trim();
+        const p1HasHi = /[\u0900-\u097F]/.test(p1);
+        const p2HasHi = /[\u0900-\u097F]/.test(p2);
+        if (!p1HasHi && p2HasHi) return { en: p1, hi: p2 };
+        if (p1HasHi && !p2HasHi) return { en: p2, hi: p1 };
+      }
+    }
+    return null;
+  };
+
+  const slashEn = checkSlash(en);
+  if (slashEn) {
+    en = slashEn.en;
+    if (!hi) hi = slashEn.hi;
+  }
+  const slashHi = checkSlash(hi);
+  if (slashHi) {
+    if (!en) en = slashHi.en;
+    hi = slashHi.hi;
+  }
+
+  // If en was pure Hindi and hi was empty:
+  if (!hi && /[\u0900-\u097F]/.test(en) && !/[a-zA-Z]/.test(en)) {
+    hi = en;
+    en = '';
+  }
+  // If hi was pure English and en was empty:
+  if (!en && /[a-zA-Z]/.test(hi) && !/[\u0900-\u097F]/.test(hi)) {
+    en = hi;
+    hi = '';
+  }
+
+  return { en, hi };
+}
+
 function shuffleArray(arr) {
   const copy = [...arr];
   for (let i = copy.length - 1; i > 0; i--) {
@@ -51,6 +95,8 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
   const [showOne, setShowOne] = useState(false);
   const [result, setResult] = useState(null);
   const [startedAt] = useState(new Date().toISOString());
+  const [langMode, setLangMode] = useState('both'); // 'both' | 'en' | 'hi'
+  const [showSolutions, setShowSolutions] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -116,7 +162,7 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
               const { data: qs, error: qe } = await supabase
                 .from('questions')
                 .select(
-                  'id,question,option_a,option_b,option_c,option_d,correct_answer,explanation,question_hi,option_a_hi,option_b_hi,option_c_hi,option_d_hi,subject,topic,difficulty,exam'
+                  'id,question,option_a,option_b,option_c,option_d,correct_answer,explanation,question_hi,option_a_hi,option_b_hi,option_c_hi,option_d_hi,explanation_hi,language,subject,topic,difficulty,exam'
                 )
                 .in('id', qIds);
 
@@ -182,7 +228,7 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
           let query = supabase
             .from('questions')
             .select(
-              'id,question,option_a,option_b,option_c,option_d,correct_answer,explanation,question_hi,option_a_hi,option_b_hi,option_c_hi,option_d_hi,subject,topic,difficulty,exam'
+              'id,question,option_a,option_b,option_c,option_d,correct_answer,explanation,question_hi,option_a_hi,option_b_hi,option_c_hi,option_d_hi,explanation_hi,language,subject,topic,difficulty,exam'
             )
             .eq('status', 'approved')
             .limit(effectiveLimit);
@@ -197,14 +243,14 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
           error = r.error;
         }
 
-        // Validate complete integrity of question records
+        // Validate complete integrity of question records (English, Hindi, or Bilingual)
         let validQuestions = (data || []).filter(
           x =>
-            x.question?.trim() &&
-            x.option_a?.trim() &&
-            x.option_b?.trim() &&
-            x.option_c?.trim() &&
-            x.option_d?.trim() &&
+            (x.question?.trim() || x.question_hi?.trim()) &&
+            (x.option_a?.trim() || x.option_a_hi?.trim()) &&
+            (x.option_b?.trim() || x.option_b_hi?.trim()) &&
+            (x.option_c?.trim() || x.option_c_hi?.trim()) &&
+            (x.option_d?.trim() || x.option_d_hi?.trim()) &&
             /^[ABCD]$/.test(cleanAnswer(x.correct_answer))
         );
 
@@ -380,9 +426,157 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
 
           {msg && <div className="error-badge">{msg}</div>}
 
-          <button className="btn dark full" style={{ marginTop: '20px' }} onClick={close}>
-            Return to Dashboard
-          </button>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '20px' }}>
+            <button
+              className="btn primary"
+              onClick={() => setShowSolutions(s => !s)}
+            >
+              {showSolutions ? 'Hide Solutions' : '📖 View Solutions & Explanations'}
+            </button>
+            <button className="btn dark" onClick={close}>
+              Return to Dashboard
+            </button>
+          </div>
+
+          {showSolutions && (
+            <div className="solution-review-panel">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', marginBottom: '8px' }}>
+                <b style={{ fontSize: '14px', color: '#1e293b' }}>Bilingual Questions & Solutions Review</b>
+                <div className="lang-selector-group">
+                  <button
+                    type="button"
+                    className={'lang-btn ' + (langMode === 'both' ? 'active' : '')}
+                    onClick={() => setLangMode('both')}
+                  >
+                    Both
+                  </button>
+                  <button
+                    type="button"
+                    className={'lang-btn ' + (langMode === 'en' ? 'active' : '')}
+                    onClick={() => setLangMode('en')}
+                  >
+                    English
+                  </button>
+                  <button
+                    type="button"
+                    className={'lang-btn ' + (langMode === 'hi' ? 'active' : '')}
+                    onClick={() => setLangMode('hi')}
+                  >
+                    हिन्दी
+                  </button>
+                </div>
+              </div>
+
+              {questions.map((item, idx) => {
+                const userAns = answers[item.id] || null;
+                const correctAns = cleanAnswer(item.correct_answer);
+                const isCorrect = userAns === correctAns;
+                const isSkipped = !userAns;
+                const cardStatus = isSkipped ? 'skipped' : (isCorrect ? 'correct' : 'wrong');
+                const itemQPair = getBilingualPair(item.question, item.question_hi);
+                const itemExpPair = getBilingualPair(item.explanation, item.explanation_hi);
+
+                return (
+                  <div key={item.id || idx} className={`solution-q-card ${cardStatus}`}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="pill">Q{idx + 1} · {item.subject || 'General'}</span>
+                      <span className={isCorrect ? 'success-badge' : isSkipped ? 'tag' : 'error-badge'}>
+                        {isCorrect ? '✓ Correct (+1)' : isSkipped ? '⚪ Skipped (0)' : `✗ Wrong (-${result.negativeMarking})`}
+                      </span>
+                    </div>
+
+                    {(langMode === 'both' || langMode === 'en' || !itemQPair.hi) && (
+                      <h4 style={{ margin: '12px 0 6px', fontSize: '15px', color: '#0f172a' }}>{itemQPair.en}</h4>
+                    )}
+                    {(langMode === 'both' && itemQPair.hi && itemQPair.hi !== itemQPair.en) && (
+                      <div className="question-hi-box" style={{ margin: '6px 0 10px' }}>
+                        <span className="lang-tag-hi">हिन्दी प्रश्न</span>
+                        <p className="question-hi-text" style={{ fontSize: '14px', margin: 0 }}>{itemQPair.hi}</p>
+                      </div>
+                    )}
+                    {langMode === 'hi' && (
+                      <h4 style={{ margin: '12px 0 6px', fontSize: '15px', color: '#0f172a' }}>{itemQPair.hi || itemQPair.en}</h4>
+                    )}
+
+                    {/* Options list in review */}
+                    <div style={{ marginTop: '8px', display: 'grid', gap: '6px' }}>
+                      {['a', 'b', 'c', 'd'].map(letter => {
+                        const ltrUpper = letter.toUpperCase();
+                        const optPair = getBilingualPair(item[`option_${letter}`], item[`option_${letter}_hi`]);
+                        if (!optPair.en && !optPair.hi) return null;
+                        const isUserChoice = userAns === ltrUpper;
+                        const isCorrectChoice = correctAns === ltrUpper;
+                        let optBorder = '#e2e8f0';
+                        let optBg = '#fafbfc';
+                        if (isCorrectChoice) { optBorder = '#16a16b'; optBg = '#f0fdf4'; }
+                        else if (isUserChoice && !isCorrect) { optBorder = '#dc2626'; optBg = '#fef2f2'; }
+
+                        return (
+                          <div
+                            key={ltrUpper}
+                            style={{
+                              padding: '8px 12px',
+                              borderRadius: '8px',
+                              border: `1px solid ${optBorder}`,
+                              background: optBg,
+                              fontSize: '13px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between'
+                            }}
+                          >
+                            <div>
+                              {(langMode === 'both' || langMode === 'en' || !optPair.hi) && (
+                                <span><b>{ltrUpper}.</b> {optPair.en || optPair.hi}</span>
+                              )}
+                              {(langMode === 'both' && optPair.hi && optPair.hi !== optPair.en) && (
+                                <span style={{ marginLeft: '10px', color: '#64748b' }}>/ {optPair.hi}</span>
+                              )}
+                              {langMode === 'hi' && (
+                                <span><b>{ltrUpper}.</b> {optPair.hi || optPair.en}</span>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              {isUserChoice && (
+                                <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', background: isCorrect ? '#bbf7d0' : '#fecaca', color: isCorrect ? '#14532d' : '#991b1b' }}>
+                                  Your Choice
+                                </span>
+                              )}
+                              {isCorrectChoice && (
+                                <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', background: '#bbf7d0', color: '#14532d' }}>
+                                  Correct Key
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Step-by-Step Educational Explanation */}
+                    {(itemExpPair.en || itemExpPair.hi) && (
+                      <div className="solution-explanation-box">
+                        <b style={{ display: 'block', fontSize: '12px', color: '#5961df', marginBottom: '6px' }}>
+                          💡 Step-by-step Solution & Explanation (विस्तृत हल):
+                        </b>
+                        {(langMode === 'both' || langMode === 'en' || !itemExpPair.hi) && itemExpPair.en && (
+                          <p style={{ margin: '0 0 6px', fontSize: '13px', lineHeight: 1.5, color: '#1e293b' }}>
+                            {itemExpPair.en}
+                          </p>
+                        )}
+                        {(langMode === 'both' || langMode === 'hi') && itemExpPair.hi && (
+                          <p style={{ margin: '6px 0 0', fontSize: '13px', lineHeight: 1.5, color: '#334155' }}>
+                            <span className="lang-tag-hi" style={{ marginRight: '6px' }}>हिन्दी समाधान</span>
+                            {itemExpPair.hi}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -424,11 +618,41 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
               {current.topic ? ` (${current.topic})` : ''} · +{marksPerQuestion} / -{negativeMarking} marks
             </small>
           </div>
-          <strong className={time <= 300 ? 'timer danger' : 'timer'}>
-            <Clock3 size={18} />
-            {String(Math.floor(time / 60)).padStart(2, '0')}:
-            {String(time % 60).padStart(2, '0')}
-          </strong>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div className="lang-selector-group">
+              <button
+                type="button"
+                className={'lang-btn ' + (langMode === 'both' ? 'active' : '')}
+                onClick={() => setLangMode('both')}
+                title="Bilingual mode (English + Hindi)"
+              >
+                🌐 Both (द्विभाषी)
+              </button>
+              <button
+                type="button"
+                className={'lang-btn ' + (langMode === 'en' ? 'active' : '')}
+                onClick={() => setLangMode('en')}
+                title="English only"
+              >
+                English
+              </button>
+              <button
+                type="button"
+                className={'lang-btn ' + (langMode === 'hi' ? 'active' : '')}
+                onClick={() => setLangMode('hi')}
+                title="Hindi only"
+              >
+                हिन्दी
+              </button>
+            </div>
+
+            <strong className={time <= 300 ? 'timer danger' : 'timer'}>
+              <Clock3 size={18} />
+              {String(Math.floor(time / 60)).padStart(2, '0')}:
+              {String(time % 60).padStart(2, '0')}
+            </strong>
+          </div>
         </div>
 
         {(showFive || showOne) && (
@@ -445,26 +669,68 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
         <div className="mock-body">
           <main>
             <span className="pill">QUESTION {q + 1} OF {questions.length}</span>
-            <h2 style={{ fontSize: '18px', marginTop: '10px' }}>{current.question}</h2>
-            {current.question_hi && (
-              <p className="question-hi" style={{ fontSize: '16px' }}>{current.question_hi}</p>
-            )}
 
+            {/* Bilingual Question rendering */}
+            {(() => {
+              const qPair = getBilingualPair(current.question, current.question_hi);
+              return (
+                <>
+                  {(langMode === 'both' || langMode === 'en' || !qPair.hi) && (
+                    <h2 className="question-en" style={{ fontSize: '18px', marginTop: '10px' }}>
+                      {qPair.en}
+                    </h2>
+                  )}
+                  {(langMode === 'both' && qPair.hi && qPair.hi !== qPair.en) && (
+                    <div className="question-hi-box">
+                      <span className="lang-tag-hi">हिन्दी प्रश्न</span>
+                      <p className="question-hi-text">{qPair.hi}</p>
+                    </div>
+                  )}
+                  {langMode === 'hi' && (
+                    <h2 className="question-en" style={{ fontSize: '18px', marginTop: '10px' }}>
+                      {qPair.hi || qPair.en}
+                    </h2>
+                  )}
+                </>
+              );
+            })()}
+
+            {/* Bilingual Options rendering */}
             <div style={{ marginTop: '16px' }}>
-              {opts.map(([key, text]) => (
-                <label
-                  className={'option ' + (answers[current.id] === key ? 'selected' : '')}
-                  key={key}
-                >
-                  <input
-                    type="radio"
-                    name={'q-' + current.id}
-                    checked={answers[current.id] === key}
-                    onChange={() => setAnswers(a => ({ ...a, [current.id]: key }))}
-                  />
-                  <b>{key}.</b> {text}
-                </label>
-              ))}
+              {opts.map(([key, rawText]) => {
+                const optPair = getBilingualPair(rawText, current[`option_${key.toLowerCase()}_hi`]);
+                const isSelected = answers[current.id] === key;
+                return (
+                  <label
+                    className={'option ' + (isSelected ? 'selected' : '')}
+                    key={key}
+                  >
+                    <input
+                      type="radio"
+                      name={'q-' + current.id}
+                      checked={isSelected}
+                      onChange={() => setAnswers(a => ({ ...a, [current.id]: key }))}
+                    />
+                    <div style={{ flex: 1 }}>
+                      {(langMode === 'both' || langMode === 'en' || !optPair.hi) && (
+                        <div className="opt-en">
+                          <b>{key}.</b> {optPair.en || optPair.hi}
+                        </div>
+                      )}
+                      {(langMode === 'both' && optPair.hi && optPair.hi !== optPair.en) && (
+                        <div className="opt-hi" style={{ marginTop: '4px' }}>
+                          <span style={{ color: '#5961df', fontWeight: 700 }}>({key})</span> {optPair.hi}
+                        </div>
+                      )}
+                      {langMode === 'hi' && (
+                        <div className="opt-en" style={{ fontSize: '15px' }}>
+                          <b>{key}.</b> {optPair.hi || optPair.en}
+                        </div>
+                      )}
+                    </div>
+                  </label>
+                );
+              })}
             </div>
 
             <div className="mock-actions">

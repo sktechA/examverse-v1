@@ -1,5 +1,6 @@
 import {
   getSupabaseAdmin,
+  callGeminiWithRetry,
   validateQuestionDeterministic,
   normalizeText,
   isSubjectStrictMatch,
@@ -551,6 +552,62 @@ export async function runIntegrityTestSuite() {
     );
   } catch (err) {
     record('15. Gemini Review Error Simulation on Generated Content', false, err.message);
+  }
+
+  // 16. Gemini API 503 Exponential Backoff Retry & Timeout Promise (Recovers Gracefully)
+  try {
+    let attempts = 0;
+    const transient503Gemini = {
+      models: {
+        generateContent: async () => {
+          attempts++;
+          if (attempts < 3) {
+            const err503 = new Error('503 Service Unavailable: Backend overloaded');
+            err503.status = 503;
+            throw err503;
+          }
+          return {
+            text: JSON.stringify({
+              reviews: [
+                {
+                  index: 0,
+                  verdict: 'publish',
+                  confidence: 0.97,
+                  correct_answer_valid: true,
+                  options_quality_ok: true,
+                  factual_accuracy_ok: true,
+                  subject_aligned: true,
+                  notes: 'Recovered after transient 503'
+                }
+              ]
+            })
+          };
+        }
+      }
+    };
+
+    const retryResult = await callGeminiWithRetry(
+      () => transient503Gemini.models.generateContent(),
+      {
+        maxRetries: 3,
+        initialDelayMs: 15,
+        timeoutMs: 3000,
+        operationName: 'Test 503 Recovery'
+      }
+    );
+
+    const parsedRetry = JSON.parse(retryResult.text);
+    const retrySuccess = attempts === 3 && parsedRetry.reviews[0].verdict === 'publish';
+
+    record(
+      '16. Gemini API 503 Exponential Backoff Retry & Timeout Promise (Recovers Gracefully)',
+      retrySuccess,
+      retrySuccess
+        ? `Successfully recovered on attempt ${attempts} after 2 transient 503 errors within max 3 retries`
+        : `Retry failed: attempts=${attempts}`
+    );
+  } catch (err) {
+    record('16. Gemini API 503 Exponential Backoff Retry & Timeout Promise', false, err.message);
   }
 
   report.total = report.tests.length;

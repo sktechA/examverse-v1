@@ -109,6 +109,19 @@ export function getGeminiClient() {
 }
 
 /**
+ * Normalizes user/env model names to official valid Gemini model IDs
+ */
+export function getNormalizedGeminiModel(rawModel) {
+  if (!rawModel) return 'gemini-3.8-flash';
+  const clean = String(rawModel).trim().toLowerCase().replace(/\s+/g, '-');
+  if (clean.includes('3.8') && clean.includes('flash')) return 'gemini-3.8-flash';
+  if (clean.includes('3.1') && clean.includes('pro')) return 'gemini-3.1-pro-preview';
+  if (clean.includes('3.1') && clean.includes('flash-lite')) return 'gemini-3.1-flash-lite';
+  if (clean.includes('flash')) return 'gemini-flash-latest';
+  return clean || 'gemini-3.8-flash';
+}
+
+/**
  * Server-side Admin Authorization Check
  * Protects admin endpoints from public unauthenticated access.
  * Checks Bearer token against Supabase auth and profile role, or CRON_SECRET for scheduler calls.
@@ -196,9 +209,147 @@ export function normalizeText(s = '') {
     .trim();
 }
 
-export function cleanAnswer(v = '') {
-  const m = String(v || '').trim().match(/^\s*([ABCD])(?:\s*[.)]|\s|$)/i);
-  return m ? m[1].toUpperCase() : String(v || '').trim().toUpperCase().slice(0, 1);
+export function cleanAnswer(v = '', options = null) {
+  const s = String(v || '').trim();
+  // 1. Direct match for A, B, C, D
+  const mLetter = s.match(/^\s*(?:\(\s*([ABCD])\s*\)|\[\s*([ABCD])\s*\]|([ABCD]))(?:\s*[.):\-–—]|\s|$)/i);
+  if (mLetter) return (mLetter[1] || mLetter[2] || mLetter[3]).toUpperCase();
+
+  // 2. Numbered answers 1 -> A, 2 -> B, 3 -> C, 4 -> D
+  const mNum = s.match(/^\s*(?:\(\s*([1-4])\s*\)|\[\s*([1-4])\s*\]|([1-4]))(?:\s*[.):\-–—]|\s|$)/);
+  if (mNum) {
+    const num = mNum[1] || mNum[2] || mNum[3];
+    return { '1': 'A', '2': 'B', '3': 'C', '4': 'D' }[num];
+  }
+
+  // 3. Devanagari numerals: १ -> A, २ -> B, ३ -> C, ४ -> D
+  const mDev = s.match(/^\s*(?:\(\s*([१२३४])\s*\)|\[\s*([१२३४])\s*\]|([१२३४]))(?:\s*[.):\-–—]|\s|$)/);
+  if (mDev) {
+    const dev = mDev[1] || mDev[2] || mDev[3];
+    return { '१': 'A', '२': 'B', '३': 'C', '४': 'D' }[dev];
+  }
+
+  // 4. Devanagari option letters: क -> A, ख -> B, ग -> C, घ -> D
+  const mDevChar = s.match(/^\s*(?:\(\s*([कखगघ])\s*\)|\[\s*([कखगघ])\s*\]|([कखगघ]))(?:\s*[.):\-–—]|\s|$)/);
+  if (mDevChar) {
+    const char = mDevChar[1] || mDevChar[2] || mDevChar[3];
+    return { 'क': 'A', 'ख': 'B', 'ग': 'C', 'घ': 'D' }[char];
+  }
+
+  // 5. If options map or record is provided, check if string matches option text
+  if (options && typeof options === 'object') {
+    const normVal = s.toLowerCase().trim();
+    for (const letter of ['A', 'B', 'C', 'D']) {
+      const key = `option_${letter.toLowerCase()}`;
+      const optVal = String(options[key] || options[letter] || '').toLowerCase().trim();
+      if (optVal && (normVal === optVal || normVal.startsWith(optVal) || optVal.startsWith(normVal))) {
+        return letter;
+      }
+    }
+  }
+
+  const first = s.toUpperCase().slice(0, 1);
+  return ['A', 'B', 'C', 'D'].includes(first) ? first : '';
+}
+
+/**
+ * Puzzle / Seating Arrangement Context Detection (Requirement 6)
+ * Detects questions that depend on an arrangement premise and flags them if the premise is missing.
+ */
+export function hasDependentReference(text = '') {
+  const t = String(text || '').trim();
+  const patterns = [
+    /उसी व्यवस्था के अनुसार/i,
+    /दी गई व्यवस्था के अनुसार/i,
+    /उपरोक्त व्यवस्था के अनुसार/i,
+    /उपर्युक्त व्यवस्था के अनुसार/i,
+    /दी गई व्यवस्था में/i,
+    /उपरोक्त व्यवस्था में/i,
+    /बैठक व्यवस्था के अनुसार/i,
+    /पहेली के अनुसार/i,
+    /according to the (?:above |given )?arrangement/i,
+    /based on the (?:above |given )?arrangement/i,
+    /in the (?:above |given )?arrangement/i,
+    /which of the following is true according to the arrangement/i,
+    /who sits (?:immediately |second |third |fourth )?(?:to the )?(?:left|right) of/i,
+    /who sits between/i,
+    /who sits opposite/i,
+    /who faces/i
+  ];
+  return patterns.some(p => p.test(t));
+}
+
+export function hasPuzzlePremise(text = '') {
+  const t = String(text || '').trim();
+  const setupPatterns = [
+    /(?:eight|seven|six|nine|ten|8|7|6|9|10|\w+)\s+(?:persons|people|friends|members|individuals)\s+.*(?:sitting|seated|around|row|floor|facing)/i,
+    /(?:sitting|seated)\s+(?:around|in a row|in a circle|facing center|facing North)/i,
+    /(?:आठ|सात|छह|नौ|दस|[0-9]+)\s*(?:व्यक्ति|मित्र|लोग|सदस्य).*?(?:बैठे|पंक्ति|वृत्ताकार|मंजिल|दिशा)/i,
+    /(?:वृत्ताकार|मेज|पंक्ति|मंजिल|उत्तर की ओर|दक्षिण की ओर|केंद्र की ओर)\s*मुख/i,
+    /(?:study|read) the following information.*answer/i,
+    /निम्नलिखित जानकारी का ध्यानपूर्वक अध्ययन/i
+  ];
+  return setupPatterns.some(p => p.test(t)) || t.length > 250;
+}
+
+export function isDependentContextMissing(text = '') {
+  if (!hasDependentReference(text)) return false;
+  return !hasPuzzlePremise(text);
+}
+
+/**
+ * Safe Gemini Execution with Timeout Promise and Exponential Backoff Retry (max 3 retries).
+ * Handles transient 503 Service Unavailable, 429 rate limits, timeouts, and network errors gracefully.
+ */
+export async function callGeminiWithRetry(fn, options = {}) {
+  const maxRetries = options.maxRetries ?? options.retries ?? 3;
+  const initialDelay = options.initialDelayMs ?? options.delayMs ?? 1000;
+  const timeoutMs = options.timeoutMs ?? 20000;
+  const operationName = options.operationName || 'Gemini API call';
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let timerId = null;
+    try {
+      const timeoutPromise = new Promise((_, reject) => {
+        timerId = setTimeout(() => {
+          const timeoutErr = new Error(`${operationName} timed out after ${timeoutMs}ms`);
+          timeoutErr.status = 504;
+          timeoutErr.isTimeout = true;
+          reject(timeoutErr);
+        }, timeoutMs);
+      });
+
+      const result = await Promise.race([
+        fn(),
+        timeoutPromise
+      ]);
+
+      if (timerId) clearTimeout(timerId);
+      return result;
+    } catch (err) {
+      if (timerId) clearTimeout(timerId);
+      lastError = err;
+
+      const status = err?.status || err?.statusCode || err?.response?.status;
+      const msg = String(err?.message || '');
+      const is503 = status === 503 || /503|service\s*unavailable/i.test(msg);
+      const isTransient = is503 ||
+        status === 429 ||
+        err?.isTimeout ||
+        /timeout|timed\s*out|ETIMEDOUT|ECONNRESET|resource_exhausted|unavailable|overloaded/i.test(msg);
+
+      if (!isTransient || attempt === maxRetries) {
+        console.warn(`[GeminiRetry] ${operationName} final failure on attempt ${attempt + 1}/${maxRetries + 1}:`, msg);
+        break;
+      }
+
+      const backoff = initialDelay * Math.pow(2, attempt);
+      console.warn(`[GeminiRetry] ${operationName} encountered recoverable error on attempt ${attempt + 1}/${maxRetries + 1} (${msg}). Retrying in ${backoff}ms...`);
+      await new Promise(r => setTimeout(r, backoff));
+    }
+  }
+  throw lastError;
 }
 
 /**
@@ -282,6 +433,11 @@ export function validateQuestionDeterministic(q, options = {}) {
     }
   }
 
+  // Dependent context check (Requirement 6)
+  if (isDependentContextMissing(questionText)) {
+    errors.push('Missing puzzle/arrangement context (dependent question without arrangement details)');
+  }
+
   return {
     valid: errors.length === 0,
     errors,
@@ -308,4 +464,18 @@ export function getKolkataTimeString(d = new Date()) {
     hour12: false
   });
   return formatter.format(d); // HH:mm:ss
+}
+
+export function withApiLogging(handler, routeName = 'api') {
+  return async function(req, res) {
+    try {
+      return await handler(req, res);
+    } catch (err) {
+      console.error(`[${routeName}] API Error:`, err);
+      if (res && typeof res.status === 'function' && !res.headersSent) {
+        return res.status(500).json({ error: err?.message || 'Internal Server Error' });
+      }
+      throw err;
+    }
+  };
 }

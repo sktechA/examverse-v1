@@ -152,7 +152,7 @@ Return JSON in this EXACT schema:
 
   const response = await Promise.race([
     gemini.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: process.env.GEMINI_REVIEW_MODEL_ID || 'gemini-3.8-flash',
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: { responseMimeType: 'application/json' }
     }),
@@ -216,7 +216,7 @@ Return JSON in this EXACT structure:
 
   const response = await Promise.race([
     gemini.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: process.env.GEMINI_REVIEW_MODEL_ID || 'gemini-3.8-flash',
       contents: [
         { role: 'user', parts: [
           { text: prompt },
@@ -284,7 +284,9 @@ export default async function handler(req, res) {
     const isDryRun = Boolean(req?.body?.dryRun);
     const effectiveTarget = Number(req?.body?.target || config.daily_question_target || 1000);
     const forceAiReview = req?.body?.forceAiReview === true;
-    const isAiConfigured = (process.env.GEMINI_AI_ENABLED === 'true' || config.gemini_ai_enabled === true || req?.body?.gemini_ai_enabled === true || req?.body?.enableAi === true || forceAiReview);
+    const integrityTestMode = req?.body?.testMode === true;
+    const allowTestGemini = integrityTestMode && Boolean(req?.geminiClient || req?.body?.geminiClient);
+    const isAiConfigured = (allowTestGemini || !integrityTestMode) && (process.env.GEMINI_AI_ENABLED === 'true' || config.gemini_ai_enabled === true || req?.body?.gemini_ai_enabled === true || req?.body?.enableAi === true || forceAiReview);
     const gemini = req?.geminiClient || req?.body?.geminiClient || (isAiConfigured ? getGeminiClient() : null);
     const isAiActive = Boolean((isAiConfigured || req?.geminiClient || req?.body?.geminiClient) && gemini);
 
@@ -339,8 +341,9 @@ export default async function handler(req, res) {
     }
 
     // 3. Step A: Official Current Affairs Ingestion (Target 100-200)
+    // Integrity tests use testMode to isolate DB/pipeline logic from slow external government feeds.
     let caAdded = 0;
-    try {
+    if (req?.body?.testMode !== true) try {
       const caReq = {
         method: 'POST',
         isInternal: true,

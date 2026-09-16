@@ -68,17 +68,31 @@ export const OFFICIAL_SOURCES = [
 
 export function getSupabaseAdmin(req = null) {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-  const anonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
-  const key = serviceKey || anonKey;
-  console.info('[DB] Supabase config:', JSON.stringify({ url: url ? 'OK' : 'MISSING', service_role_key: serviceKey ? 'OK' : 'MISSING', anon_key: anonKey ? 'OK' : 'MISSING', selected_key: serviceKey ? 'SERVICE_ROLE' : (anonKey ? 'ANON' : 'NONE') }));
+  const secretKey = process.env.SUPABASE_SECRET_KEY || '';
+  const legacyServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  const key = secretKey || legacyServiceKey;
+  console.info('[DB] Supabase config:', JSON.stringify({
+    url: url ? 'OK' : 'MISSING',
+    secret_key: secretKey ? 'OK' : 'MISSING',
+    service_role_key: legacyServiceKey ? 'OK' : 'MISSING',
+    anon_key: process.env.VITE_SUPABASE_ANON_KEY ? 'PRESENT_BUT_NOT_USED' : 'MISSING',
+    selected_key: secretKey ? 'SECRET' : (legacyServiceKey ? 'SERVICE_ROLE' : 'NONE')
+  }));
   if (!url || !key) return null;
-  const headers = {};
-  const authHeader = req?.headers?.authorization || req?.headers?.Authorization || '';
-  if (!serviceKey && authHeader) headers.Authorization = authHeader;
   return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers }
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+  });
+}
+
+// User-session client: publishable/anon key is used only to validate the caller JWT.
+export function getSupabaseUser(req = null) {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+  const key = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || '';
+  if (!url || !key) return null;
+  const authHeader = req?.headers?.authorization || req?.headers?.Authorization || '';
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: authHeader ? { headers: { Authorization: authHeader } } : undefined
   });
 }
 
@@ -134,7 +148,9 @@ export async function verifyAdminAuth(req, sb) {
   }
 
   try {
-    const { data: userData, error: userErr } = await sb.auth.getUser(token);
+    const userSb = getSupabaseUser(req);
+    if (!userSb) return { ok: false, statusCode: 503, error: 'User authentication configuration unavailable' };
+    const { data: userData, error: userErr } = await userSb.auth.getUser(token);
     const user = userData?.user;
     if (userErr || !user) {
       return {

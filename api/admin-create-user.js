@@ -6,8 +6,8 @@ export default async function handler(req,res){
     const allowed=['candidate','sub_admin','question_manager','exam_manager','vacancy_manager','content_manager','support'];
     if(!allowed.includes(role)) return res.status(400).json({error:'Invalid role'});
     const url=process.env.SUPABASE_URL||process.env.VITE_SUPABASE_URL;
-    const key=process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if(!url||!key) return res.status(500).json({error:'Server is missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.'});
+    const key=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if(!url||!key) return res.status(500).json({error:'Server is missing SUPABASE_URL or SUPABASE_SECRET_KEY.'});
     const r=await fetch(`${url}/auth/v1/admin/users`,{method:'POST',headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({email:String(email).trim(),password,phone:phone||undefined,email_confirm:true,phone_confirm:!!phone,user_metadata:{full_name:String(name).trim(),phone:phone||null,role}})});
     const j=await r.json().catch(()=>({}));
     if(!r.ok) return res.status(r.status).json({error:j.msg||j.message||j.error_description||'Supabase user creation failed.'});

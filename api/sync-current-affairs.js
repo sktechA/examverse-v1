@@ -18,7 +18,8 @@ async function fetchRealOfficialBulletins(sources = OFFICIAL_SOURCES) {
   const bulletins = [];
   const fetchStatus = [];
 
-  for (const src of sources) {
+  const results = await Promise.all(sources.map(async (src) => {
+    const localBulletins = [];
     const statusRecord = {
       source_name: src.name,
       domain: src.domain,
@@ -30,7 +31,7 @@ async function fetchRealOfficialBulletins(sources = OFFICIAL_SOURCES) {
     try {
       // Real HTTP fetch with timeout and standard User-Agent
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
 
       const targetUrl = src.feed_url || src.portal_url;
       const res = await fetch(targetUrl, {
@@ -70,10 +71,11 @@ async function fetchRealOfficialBulletins(sources = OFFICIAL_SOURCES) {
         const rawDate = cleanText(dateMatch?.[1]);
 
         if (title && title.length >= 10 && (link || src.portal_url)) {
-          const publishedAt = rawDate ? new Date(rawDate).toISOString() : new Date().toISOString();
+          const parsedDate = rawDate ? new Date(rawDate) : null;
+          const publishedAt = parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : new Date().toISOString();
           const extId = `official:${src.name.toLowerCase()}:${crypto.createHash('md5').update(title + link).digest('hex')}`;
 
-          bulletins.push({
+          const bulletin = {
             external_id: extId,
             title: title.slice(0, 280),
             summary: (summary || title).slice(0, 1500),
@@ -92,8 +94,9 @@ async function fetchRealOfficialBulletins(sources = OFFICIAL_SOURCES) {
               raw_feed: targetUrl,
               verified_at: new Date().toISOString()
             }
-          });
+          };
           parsedCount++;
+          localBulletins.push(bulletin);
         }
       }
 
@@ -105,7 +108,12 @@ async function fetchRealOfficialBulletins(sources = OFFICIAL_SOURCES) {
       console.warn(`[Official Sync Warning] Could not fetch ${src.name}: ${err.message}`);
     }
 
-    fetchStatus.push(statusRecord);
+    return { bulletins: localBulletins, statusRecord };
+  }));
+
+  for (const result of results) {
+    if (result?.bulletins?.length) bulletins.push(...result.bulletins);
+    if (result?.statusRecord) fetchStatus.push(result.statusRecord);
   }
 
   return { bulletins, fetchStatus };
@@ -203,7 +211,7 @@ RULES:
 }`;
 
           const response = await gemini.models.generateContent({
-            model: 'gemini-3.8-flash',
+            model: process.env.GEMINI_REVIEW_MODEL_ID || 'gemini-3.8-flash',
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             config: { responseMimeType: 'application/json' }
           });

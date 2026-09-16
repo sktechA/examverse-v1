@@ -43,7 +43,7 @@ Return JSON only in format:
   // 15 second timeout protection against hung calls
   const response = await Promise.race([
     geminiClient.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: process.env.GEMINI_REVIEW_MODEL_ID || 'gemini-3.8-flash',
       contents: [
         {
           role: 'user',

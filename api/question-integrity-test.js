@@ -15,7 +15,7 @@ import { pathToFileURL } from 'node:url';
 
 export async function runIntegrityTestSuite() {
   const report = {
-    total: 10,
+    total: 15,
     passed: 0,
     failed: 0,
     tests: []
@@ -464,7 +464,8 @@ export async function runIntegrityTestSuite() {
         dryRun: true,
         target: 2,
         maxSeedInventory: 0, // Insufficient seed inventory
-        forceAiReview: true
+        forceAiReview: true,
+        testMode: true
       }
     });
 
@@ -529,7 +530,8 @@ export async function runIntegrityTestSuite() {
         dryRun: true,
         target: 2,
         maxSeedInventory: 0,
-        forceAiReview: true
+        forceAiReview: true,
+        testMode: true
       }
     });
 

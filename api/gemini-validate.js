@@ -135,7 +135,7 @@ Return JSON:
 
           const response = await Promise.race([
             gemini.models.generateContent({
-              model: 'gemini-3.8-flash',
+              model: process.env.GEMINI_REVIEW_MODEL_ID || 'gemini-3.8-flash',
               contents: [
                 {
                   role: 'user',

@@ -37,6 +37,15 @@ export default function DailyAutomation({ supabase, session }) {
   const [msg, setMsg] = useState('');
   const [currentTimeKolkata, setCurrentTimeKolkata] = useState('');
 
+  useEffect(() => {
+    try {
+      const savedSynthesis = localStorage.getItem('sktech_automation_synthesis_mode');
+      if (savedSynthesis !== null) {
+        setSettings(prev => ({ ...prev, synthesis_mode_enabled: savedSynthesis === 'true' }));
+      }
+    } catch (_) {}
+  }, []);
+
   // Clock for Asia/Kolkata
   useEffect(() => {
     const updateTime = () => {
@@ -64,7 +73,16 @@ export default function DailyAutomation({ supabase, session }) {
       const res = await fetch('/api/automation-settings', { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const json = await res.json();
-        if (json.settings) setSettings(json.settings);
+        if (json.settings) {
+          const saved = json.settings;
+          setSettings(prev => ({
+            ...prev,
+            ...saved,
+            daily_ca_target: Number(saved.daily_ca_target ?? saved.current_affairs_target ?? prev.daily_ca_target),
+            daily_scheduler_enabled: saved.daily_scheduler_enabled ?? saved.daily_automation_enabled ?? prev.daily_scheduler_enabled,
+            subject_quotas: saved.subject_quotas || prev.subject_quotas
+          }));
+        }
       }
 
       // Fetch logs from Supabase
@@ -98,6 +116,17 @@ export default function DailyAutomation({ supabase, session }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save settings');
+      if (data.settings) {
+        const saved = data.settings;
+        setSettings(prev => ({
+          ...prev,
+          ...saved,
+          daily_ca_target: Number(saved.daily_ca_target ?? saved.current_affairs_target ?? prev.daily_ca_target),
+          daily_scheduler_enabled: saved.daily_scheduler_enabled ?? saved.daily_automation_enabled ?? prev.daily_scheduler_enabled,
+          synthesis_mode_enabled: saved.synthesis_mode_enabled ?? prev.synthesis_mode_enabled,
+          subject_quotas: saved.subject_quotas || prev.subject_quotas
+        }));
+      }
       setMsg('Settings updated successfully in database.');
     } catch (e) {
       setMsg(`Error saving settings: ${e.message}`);
@@ -342,7 +371,7 @@ export default function DailyAutomation({ supabase, session }) {
             <select
               value={settings.synthesis_mode_enabled ? 'true' : 'false'}
               onChange={e =>
-                setSettings({ ...settings, synthesis_mode_enabled: e.target.value === 'true' })
+                setSettings(prev => { const value = e.target.value === 'true'; try { localStorage.setItem('sktech_automation_synthesis_mode', String(value)); } catch (_) {} return { ...prev, synthesis_mode_enabled: value }; })
               }
             >
               <option value="false">Disabled (Strict: Use Existing Approved Questions)</option>

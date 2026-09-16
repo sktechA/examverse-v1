@@ -18,3 +18,5 @@ DROP POLICY IF EXISTS exam_questions_candidate_published_v17 ON public.exam_ques
 CREATE POLICY exam_questions_candidate_published_v17
 ON public.exam_questions FOR SELECT TO authenticated
 USING (EXISTS (SELECT 1 FROM public.exams e WHERE e.id=exam_questions.exam_id AND e.published=true AND e.status='published'));
+
+

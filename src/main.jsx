@@ -144,7 +144,7 @@ function parseMetaTag(tag){
   let difficulty='Moderate';
   const dm=clean.match(/\b(Easy|Moderate|Medium|Hard|Difficult)\b/i);
   if(dm)difficulty=/easy/i.test(dm[1])?'Easy':/hard|difficult/i.test(dm[1])?'Hard':'Moderate';
-  if(!rawSubject)rawSubject='General Awareness';
+  if(!rawSubject && clean)rawSubject='General Awareness';
   return {rawSubject,topic:/^(MAINS|PRELIMS)$/i.test(topic)?'':topic.replace(/\b(MAINS|PRELIMS|Easy|Moderate|Medium|Hard|Difficult)\b/gi,'').trim(),difficulty};
 }
 function parseTxtQuestions(text,sourceName){
@@ -183,27 +183,40 @@ function parseTxtQuestions(text,sourceName){
     q={number:num,question:cleanDisplayText(rest),option_a:'',option_b:'',option_c:'',option_d:'',correct_answer:'',explanation:'',subject,difficulty:meta.difficulty||fileMeta.difficulty||'Moderate',topic:meta.topic||fileMeta.topic||'',subtopic:'',language:'Hindi',exam:fileMeta.exam||inferExam(meta.rawSubject||subject,sourceName),source:sourceName,tags:[],rawSubject:meta.rawSubject};
     currentField='question';
   };
+  let m;
   for(let i=0;i<lines.length;i++){
     const line=lines[i]; if(!line)continue;
     if(/^={3,}|^-{5,}$/.test(line))continue;
     // Standalone file headings/meta are treated as context, not question text.
     if(!q && (/^(?:exam|परीक्षा|subject|विषय|topic|chapter|अध्याय)\s*[:：-]/i.test(line)||/^\[[^\]]+\]$/.test(line))){absorbHeading(line);continue;}
     if(!q && /^(?:IBPS|RRB|SSC|SBI|UPSC|MPPSC|MPESB|MP SI|MP Police|Railway|Banking|General Awareness|Current Affairs|Reasoning|Mathematics|Hindi|English|Computer|Science)/i.test(line) && line.length<180){absorbHeading(line);continue;}
+    // Explicit question starts must be handled before the no-current-question guard.
+    // The previous implementation skipped the first numbered question entirely when q was null.
+    m=line.match(/^Q\s*(\d+)\s*[.)\-:]\s*(?:\[([^\]]+)\])?\s*(.*)$/i);
+    if(m){ start(parseInt(m[1],10),m[2]||'',cleanDisplayText(m[3])); continue; }
+
+    // A bare numbered question is recognized when there is no active question,
+    // or when the active question is complete and the number advances.
+    m=line.match(/^(\d+)\s*[.)\-:]\s*(?:\[([^\]]+)\])?\s*(.*)$/i);
+    if(m){
+      const n=parseInt(m[1],10); const rest=cleanDisplayText(m[3]);
+      const currentComplete=!!(q && q.option_a&&q.option_b&&q.option_c&&q.option_d&&q.correct_answer);
+      const startsNew=!q || Boolean(m[2]) || (currentComplete && Number.isFinite(q.number) && n>Number(q.number));
+      if(startsNew){ start(n,m[2]||'',rest); continue; }
+    }
     if(!q)continue;
-    // Options must be recognized BEFORE numbered question starts, because many TXT files use 1)-4) for options.
-    m=line.match(/^(?:\(?\s*A\s*\)?|A\s*[.):\-])\s*(.*)$/i); if(m){q.option_a=cleanDisplayText(m[1]);currentField='option_a';continue;}
-    m=line.match(/^(?:\(?\s*B\s*\)?|B\s*[.):\-])\s*(.*)$/i); if(m){q.option_b=cleanDisplayText(m[1]);currentField='option_b';continue;}
-    m=line.match(/^(?:\(?\s*C\s*\)?|C\s*[.):\-])\s*(.*)$/i); if(m){q.option_c=cleanDisplayText(m[1]);currentField='option_c';continue;}
-    m=line.match(/^(?:\(?\s*D\s*\)?|D\s*[.):\-])\s*(.*)$/i); if(m){q.option_d=cleanDisplayText(m[1]);currentField='option_d';continue;}
+    // Letter-labelled options.
+    m=line.match(/^\s*(?:\(\s*A\s*\)|A)\s*[.):\-]\s*(.*)$/i); if(m){q.option_a=cleanDisplayText(m[1]);currentField='option_a';continue;}
+    m=line.match(/^\s*(?:\(\s*B\s*\)|B)\s*[.):\-]\s*(.*)$/i); if(m){q.option_b=cleanDisplayText(m[1]);currentField='option_b';continue;}
+    m=line.match(/^\s*(?:\(\s*C\s*\)|C)\s*[.):\-]\s*(.*)$/i); if(m){q.option_c=cleanDisplayText(m[1]);currentField='option_c';continue;}
+    m=line.match(/^\s*(?:\(\s*D\s*\)|D)\s*[.):\-]\s*(.*)$/i); if(m){q.option_d=cleanDisplayText(m[1]);currentField='option_d';continue;}
+    // Numeric option labels 1)-4): only accept the expected next option slot.
     m=line.match(/^1\s*[.):\-]\s*(.*)$/); if(m&&!q.option_a){q.option_a=cleanDisplayText(m[1]);currentField='option_a';continue;}
-    m=line.match(/^2\s*[.):\-]\s*(.*)$/); if(m&&!q.option_b){q.option_b=cleanDisplayText(m[1]);currentField='option_b';continue;}
-    m=line.match(/^3\s*[.):\-]\s*(.*)$/); if(m&&!q.option_c){q.option_c=cleanDisplayText(m[1]);currentField='option_c';continue;}
-    m=line.match(/^4\s*[.):\-]\s*(.*)$/); if(m&&!q.option_d){q.option_d=cleanDisplayText(m[1]);currentField='option_d';continue;}
+    m=line.match(/^2\s*[.):\-]\s*(.*)$/); if(m&&q.option_a&&!q.option_b){q.option_b=cleanDisplayText(m[1]);currentField='option_b';continue;}
+    m=line.match(/^3\s*[.):\-]\s*(.*)$/); if(m&&q.option_b&&!q.option_c){q.option_c=cleanDisplayText(m[1]);currentField='option_c';continue;}
+    m=line.match(/^4\s*[.):\-]\s*(.*)$/); if(m&&q.option_c&&!q.option_d){q.option_d=cleanDisplayText(m[1]);currentField='option_d';continue;}
     m=line.match(/^(?:उत्तर|Answer|Ans|Correct\s*Answer|सही\s*उत्तर)\s*[:：=\-]\s*(.*)$/i); if(m){q.correct_answer=cleanAnswer(m[1]);currentField='answer';continue;}
     m=line.match(/^(?:विवरण|व्याख्या|Explanation|Solution|समाधान|Short Solution)\s*[:：=\-]\s*(.*)$/i); if(m){q.explanation=cleanDisplayText(m[1]);currentField='explanation';continue;}
-    // Numbered question starts are handled only after option lines.
-    m=line.match(/^(?:Q\s*)?(\d+)\s*[.)\-:]\s*(?:\[([^\]]+)\])?\s*(.*)$/i);
-    if(m){ const rest=cleanDisplayText(m[3]); if(m[2]||rest){start(parseInt(m[1],10),m[2]||'',rest);continue;} }
     m=line.match(/^English\s*:\s*(.*)$/i); if(m){q.question=(q.question?`${q.question} `:'')+cleanDisplayText(m[1]);currentField='question';continue;}
     if(currentField==='option_a')q.option_a+=(q.option_a?' ':'')+line;
     else if(currentField==='option_b')q.option_b+=(q.option_b?' ':'')+line;

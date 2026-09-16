@@ -108,7 +108,17 @@ export default async function handler(req, res) {
 
     if (poolErr) throw poolErr;
 
-    const allApproved = approvedPool || [];
+    // Never let malformed/duplicate records reach a candidate mock.
+    const seenQuestionKeys = new Set();
+    const allApproved = (approvedPool || []).filter(q => {
+      const answer = String(q.correct_answer || '').trim().toUpperCase().match(/^[ABCD]$/)?.[0] || '';
+      const fieldsComplete = [q.question, q.option_a, q.option_b, q.option_c, q.option_d].every(v => String(v || '').trim());
+      if (!fieldsComplete || !answer) return false;
+      const key = String(q.question || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!key || seenQuestionKeys.has(key)) return false;
+      seenQuestionKeys.add(key);
+      return true;
+    });
     const generatedMocks = [];
     const shortages = [];
 

@@ -412,7 +412,34 @@ export default async function handler(req, res) {
       });
     }
 
-    // Sub-step B2: When source inventory is insufficient, use Gemini server-side pipeline to generate NEW questions
+    // Sub-step B2: Use already-approved database inventory before invoking Gemini.
+    // This avoids unnecessary Gemini calls and lets the daily pipeline consume the real question bank first.
+    if (candidateQuestions.length < remainingTarget && sb) {
+      try {
+        const { data: approvedInventory } = await sb
+          .from('questions')
+          .select('id,question,option_a,option_b,option_c,option_d,correct_answer,explanation,subject,topic,difficulty,language,exam,source')
+          .eq('status', 'approved')
+          .order('created_at', { ascending: false })
+          .limit(Math.min(5000, remainingTarget + 500));
+
+        for (const item of approvedInventory || []) {
+          if (candidateQuestions.length >= remainingTarget) break;
+          const val = validateQuestionDeterministic(item, { requireSource: item.subject === 'Current Affairs' });
+          if (!val.valid) continue;
+          const hash = crypto.createHash('sha256')
+            .update(`${item.question}:${item.option_a}:${val.cleanedAnswer}`)
+            .digest('hex');
+          if (usedHashes.has(hash)) continue;
+          usedHashes.add(hash);
+          candidateQuestions.push({ ...item, correct_answer: val.cleanedAnswer, content_hash: hash, daily_job_key: jobKey });
+        }
+      } catch (inventoryErr) {
+        console.warn('[Scheduler Approved Inventory Warning]:', inventoryErr.message);
+      }
+    }
+
+    // Sub-step B3: When source inventory is insufficient, use Gemini server-side pipeline to generate NEW questions
     const shortageBeforeGen = remainingTarget - candidateQuestions.length;
     if (shortageBeforeGen > 0 && isAiActive) {
       console.log(`[Scheduler] Inventory shortage of ${shortageBeforeGen} questions. Invoking Gemini generation pipeline...`);

@@ -1,6 +1,5 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import url from 'node:url';
 
 // Server-side handlers
 import adminCreateUserHandler from './api/admin-create-user.js';
@@ -59,7 +58,7 @@ function apiMiddlewarePlugin() {
       }, 30000); // Check every 30 seconds
 
       server.middlewares.use(async (req, res, next) => {
-        const parsedUrl = url.parse(req.url, true);
+        const parsedUrl = new URL(req.url, 'http://localhost');
         const pathname = parsedUrl.pathname;
         const handler = apiRoutes[pathname];
 
@@ -72,7 +71,7 @@ function apiMiddlewarePlugin() {
             } catch (_) {
               req.body = {};
             }
-            req.query = parsedUrl.query;
+            req.query = Object.fromEntries(parsedUrl.searchParams.entries());
 
             const mockRes = {
               statusCode: 200,

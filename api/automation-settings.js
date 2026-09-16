@@ -30,27 +30,35 @@ export default async function handler(req, res) {
         .order('started_at', { ascending: false })
         .limit(10);
 
+      const normalizedSettings = config ? {
+        ...config,
+        daily_ca_target: Number(config.daily_ca_target ?? config.current_affairs_target ?? 150),
+        daily_scheduler_enabled: config.daily_scheduler_enabled ?? config.daily_automation_enabled ?? true,
+      } : {
+        daily_question_target: 1000,
+        current_affairs_target: 150,
+        daily_ca_target: 150,
+        auto_approval_threshold: 0.93,
+        gemini_ai_enabled: process.env.GEMINI_AI_ENABLED === 'true',
+        daily_automation_enabled: true,
+        daily_scheduler_enabled: true,
+        default_mock_questions: 80,
+        default_mock_count: 5,
+        difficulty_ratio: { easy: 30, moderate: 50, hard: 20 },
+        subject_quotas: {
+          Reasoning: 250,
+          Mathematics: 250,
+          'General Awareness': 150,
+          'Current Affairs': 150,
+          Computer: 100,
+          English: 50,
+          Hindi: 50
+        }
+      };
+
       return res.status(200).json({
         ok: true,
-        settings: config || {
-          daily_question_target: 1000,
-          current_affairs_target: 150,
-          auto_approval_threshold: 0.93,
-          gemini_ai_enabled: process.env.GEMINI_AI_ENABLED === 'true',
-          daily_automation_enabled: true,
-          default_mock_questions: 80,
-          default_mock_count: 5,
-          difficulty_ratio: { easy: 30, moderate: 50, hard: 20 },
-          subject_quotas: {
-            Reasoning: 250,
-            Mathematics: 250,
-            'General Awareness': 150,
-            'Current Affairs': 150,
-            Computer: 100,
-            English: 50,
-            Hindi: 50
-          }
-        },
+        settings: normalizedSettings,
         recent_logs: logs || []
       });
     } catch (err) {
@@ -67,10 +75,10 @@ export default async function handler(req, res) {
         .upsert({
           id: 'default_config',
           daily_question_target: Number(updates.daily_question_target) || 1000,
-          current_affairs_target: Number(updates.current_affairs_target) || 150,
+          current_affairs_target: Number(updates.current_affairs_target ?? updates.daily_ca_target) || 150,
           auto_approval_threshold: Number(updates.auto_approval_threshold) || 0.93,
           gemini_ai_enabled: Boolean(updates.gemini_ai_enabled),
-          daily_automation_enabled: Boolean(updates.daily_automation_enabled),
+          daily_automation_enabled: Boolean(updates.daily_automation_enabled ?? updates.daily_scheduler_enabled),
           default_mock_questions: Number(updates.default_mock_questions) || 80,
           default_mock_count: Number(updates.default_mock_count) || 5,
           difficulty_ratio: updates.difficulty_ratio || { easy: 30, moderate: 50, hard: 20 },
@@ -86,7 +94,7 @@ export default async function handler(req, res) {
         throw error;
       }
       console.info('[AUTOMATION] Save PASS');
-      return res.status(200).json({ ok: true, settings: data });
+      return res.status(200).json({ ok: true, settings: { ...data, daily_ca_target: data.current_affairs_target, daily_scheduler_enabled: data.daily_automation_enabled } });
     } catch (err) {
       return res.status(500).json({ ok: false, error: err.message });
     }

@@ -12,6 +12,7 @@ import dailySchedulerHandler from './api/daily-scheduler.js';
 import automationSettingsHandler from './api/automation-settings.js';
 import questionIntegrityHandler from './api/question-integrity-test.js';
 import bilingualTranslateHandler from './api/bilingual-translate.js';
+import systemLogsHandler from './api/system-logs.js';
 
 const apiRoutes = {
   '/api/admin-create-user': adminCreateUserHandler,
@@ -24,7 +25,8 @@ const apiRoutes = {
   '/api/daily-scheduler': dailySchedulerHandler,
   '/api/automation-settings': automationSettingsHandler,
   '/api/question-integrity-test': questionIntegrityHandler,
-  '/api/bilingual-translate': bilingualTranslateHandler
+  '/api/bilingual-translate': bilingualTranslateHandler,
+  '/api/system-logs': systemLogsHandler
 };
 
 function apiMiddlewarePlugin() {

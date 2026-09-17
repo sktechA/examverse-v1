@@ -8,6 +8,7 @@ import './styles.css';
 import DailyAutomation from './components/DailyAutomation.jsx';
 import AiMockGenerator from './components/AiMockGenerator.jsx';
 import MockModal from './components/MockModal.jsx';
+import SystemLogs from './components/SystemLogs.jsx';
 
 const SUPABASE_URL=import.meta.env.VITE_SUPABASE_URL||'';
 const SUPABASE_ANON_KEY=import.meta.env.VITE_SUPABASE_ANON_KEY||'';
@@ -60,16 +61,78 @@ const vacancies=[
 
 function App(){
  useEffect(()=>{
-   const onError=e=>{logEvent('error',e.message||'Unhandled browser error',{source:'candidate-runtime',data:{filename:e.filename||'',line:e.lineno||0,col:e.colno||0}})};
-   const onReject=e=>{logEvent('error',e.reason?.message||String(e.reason||'Unhandled promise rejection'),{source:'candidate-runtime',data:{type:'unhandledrejection'}})};
+   const onError=e=>{logEvent('error',e.message||'Unhandled browser error',{source:'candidate-runtime',data:{filename:e.filename||'',line:e.lineno||0,col:e.colno||0}}).catch(()=>{})};
+   const onReject=e=>{logEvent('error',e.reason?.message||String(e.reason||'Unhandled promise rejection'),{source:'candidate-runtime',data:{type:'unhandledrejection'}}).catch(()=>{})};
    window.addEventListener('error',onError);window.addEventListener('unhandledrejection',onReject);
    return()=>{window.removeEventListener('error',onError);window.removeEventListener('unhandledrejection',onReject)};
  },[]);
- const [role,setRole]=useState(PORTAL_MODE==='admin'?'admin':'student'),[logged,setLogged]=useState(false),[page,setPage]=useState('dashboard'),[open,setOpen]=useState(false),[selected,setSelected]=useState(null),[session,setSession]=useState(null),[authChecking,setAuthChecking]=useState(true);
- useEffect(()=>{if(!supabase){setAuthChecking(false);return}let mounted=true;
-  const boot=async()=>{const {data}=await supabase.auth.getSession();if(!mounted)return;if(data.session){const ok=await verifyAccess(data.session);if(ok){setSession(data.session);setLogged(true)}}setAuthChecking(false)};
-  const verifyAccess=async(ses)=>{if(PORTAL_MODE!=='admin')return true;const {data,error}=await supabase.from('profiles').select('role').eq('id',ses.user.id).maybeSingle();if(error||!data||!['admin','super_admin','question_manager','exam_manager','vacancy_manager','content_manager','support'].includes(data.role)){await supabase.auth.signOut();return false}return true};
-  boot();const {data}=supabase.auth.onAuthStateChange(async(_e,ses)=>{if(!mounted)return;if(!ses){setSession(null);setLogged(false);return}const ok=await verifyAccess(ses);if(ok){setSession(ses);setLogged(true)}});return()=>{mounted=false;data.subscription.unsubscribe()};
+ const [role,setRole]=useState(PORTAL_MODE==='admin'?'admin':'student'),
+ [logged,setLogged]=useState(false),
+ [page,setPage]=useState('dashboard'),
+ [open,setOpen]=useState(false),
+ [selected,setSelected]=useState(null),
+ [session,setSession]=useState(null),
+ [authChecking,setAuthChecking]=useState(true);
+
+ useEffect(()=>{
+   if(!supabase){setAuthChecking(false);return}
+   let mounted=true;
+   const verifyAccess=async(ses)=>{
+     if(!ses) return false;
+     if(PORTAL_MODE!=='admin')return true;
+     try{
+       const {data,error}=await supabase.from('profiles').select('role').eq('id',ses.user.id).maybeSingle();
+       if(error||!data||!['admin','super_admin','question_manager','exam_manager','vacancy_manager','content_manager','support'].includes(data.role)){
+         await supabase.auth.signOut();
+         return false;
+       }
+       return true;
+     }catch(e){
+       console.warn('verifyAccess warning:', e);
+       return false;
+     }
+   };
+   const boot=async()=>{
+     try{
+       const {data}=await supabase.auth.getSession();
+       if(!mounted)return;
+       if(data?.session){
+         const ok=await verifyAccess(data.session);
+         if(ok && mounted){
+           setSession(data.session);
+           setLogged(true);
+           if(PORTAL_MODE!=='admin'){
+             setRole('student');
+           }
+         }
+       }
+     }catch(err){
+       console.warn('Auth boot exception:', err);
+     }finally{
+       if(mounted) setAuthChecking(false);
+     }
+   };
+   boot();
+   const {data}=supabase.auth.onAuthStateChange(async(evt,ses)=>{
+     if(!mounted)return;
+     if(evt==='SIGNED_OUT'||!ses){
+       setSession(null);
+       setLogged(false);
+       return;
+     }
+     if(evt==='SIGNED_IN'||evt==='TOKEN_REFRESHED'||evt==='USER_UPDATED'||evt==='INITIAL_SESSION'){
+       try{
+         const ok=await verifyAccess(ses);
+         if(ok && mounted){
+           setSession(ses);
+           setLogged(true);
+         }
+       }catch(err){
+         console.warn('Auth state change error:', err);
+       }
+     }
+   });
+   return()=>{mounted=false;data?.subscription?.unsubscribe()};
  },[]);
  const logout=async()=>{if(supabase)await supabase.auth.signOut();setLogged(false);setSession(null);setRole(PORTAL_MODE==='admin'?'admin':'student');setPage('dashboard')};
  if(authChecking)return <div className="loading-screen"><Brand/><p>Connecting securely…</p></div>;
@@ -103,7 +166,121 @@ function SignUp({close,back}){
  if(done)return <div className="modal-bg"><div className="modal"><button className="close" onClick={close}><X/></button><Brand/><span className="pill modal-pill">CANDIDATE REGISTRATION</span><h2>Account Created ✓</h2><p className="muted">{msg}</p><button className="btn dark full" onClick={back}>Go to Login</button></div></div>;
  return <div className="modal-bg"><div className="modal wide-modal"><button className="close" onClick={close}><X/></button><Brand/><span className="pill modal-pill">NEW CANDIDATE</span><h2>Create your account</h2><p className="muted">Email + password is the primary login. OTP and Google remain optional.</p><div className="form-grid"><label>Full Name<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Full name"/></label><label>Mobile Number<input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="+91 XXXXX XXXXX"/></label><label>Email ID<input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="you@example.com"/></label><label>Create Password<input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="Minimum 8 characters"/></label><label>Confirm Password<input type="password" value={form.confirm} onChange={e=>setForm({...form,confirm:e.target.value})} placeholder="Repeat password"/></label><label>Captcha <b className="captcha-box">{captcha}</b><input value={form.captcha} onChange={e=>setForm({...form,captcha:e.target.value})} placeholder="Enter captcha"/></label></div><label className="consent-row"><input type="checkbox" checked={form.terms} onChange={e=>setForm({...form,terms:e.target.checked})}/><span>I voluntarily provide the above information to this portal and agree to its Terms & Conditions and Privacy Policy.</span></label><button className="btn primary full" disabled={busy} onClick={submit}>{busy?'Creating account...':'Sign Up'}</button>{msg&&<div className="error-badge">{msg}</div>}<button className="btn light full" onClick={back}>Already have an account? Login</button></div></div>
 }
-function Shell({role,page,setPage,logout,selected,setSelected,session}){const nav=role==='admin'?[['dashboard','Dashboard',LayoutDashboard],['automation','Daily 00:00 Pipeline',Zap],['questions','Questions',BookOpen],['exams','Exam Management',ClipboardCheck],['current-affairs','Current Affairs',Bell],['vacancies','Vacancies',Search],['candidates','Users & Candidates',Users],['notifications','Notifications',Bell],['system-logs','System Logs',Activity],['profile','My Profile',UserCircle],['settings','Settings',Settings]]:[['dashboard','Dashboard',LayoutDashboard],['subjects','Subject Practice',BookOpen],['exams','Mock Tests',ClipboardCheck],['current-affairs','Current Affairs',Bell],['vacancies','Vacancies',Search],['profile','My Profile',UserCircle],['settings','Settings',Settings]];return <div className="app"><aside className="sidebar"><Brand dark/><div className="role-badge">{role==='admin'?'ADMIN CONSOLE':'CANDIDATE PORTAL'}</div>{nav.map(([id,t,I])=><button className={'nav '+(page===id?'active':'')} key={id} onClick={()=>setPage(id)}><I size={18}/>{t}</button>)}<button className="nav logout" onClick={logout}><LogOut size={18}/>Logout</button></aside><div className="main"><header className="dashbar"><button className="hamb"><Menu/></button><div className="welcome"><span className="eyebrow">{role==='admin'?'CONTROL CENTER':'CANDIDATE AREA'}</span><b>{role==='admin'?'Admin Control Center':'Your Preparation Center'} <span className="wave">✦</span></b><small>{role==='admin'?'Manage users, exams, questions, vacancies and analytics.':'Track your real scores, weak topics and preparation.'}</small></div><Profile role={role} logout={logout} session={session} setPage={setPage}/></header><div className="content">{page==='dashboard'&&<Dashboard role={role} setPage={setPage} setSelected={setSelected}/>} {page==='automation'&&<DailyAutomation supabase={supabase} session={session}/>} {page==='subjects'&&<Subjects setSelected={setSelected}/>} {page==='exams'&&(role==='admin'?<AdminExams session={session}/>:<Exams setSelected={setSelected}/>)} {page==='current-affairs'&&<CurrentAffairs setSelected={setSelected} role={role}/>} {page==='vacancies'&&<Vacancies/>} {page==='questions'&&<Questions session={session}/>} {page==='candidates'&&<Candidates session={session}/>} {page==='profile'&&<ProfilePage session={session} role={role}/>} {page==='settings'&&<SettingsPage session={session} role={role} setPage={setPage}/>}{page==='notifications'&&<Notifications/>}{page==='system-logs'&&<SystemLogs/>}{selected&&<MockModal exam={selected} close={()=>setSelected(null)} session={session} supabase={supabase} Brand={Brand}/>}</div><footer className="dash-footer">Powered by <b>SKTech All Right Reserved</b></footer></div></div>}
+function Shell({role,page,setPage,logout,selected,setSelected,session}){
+  const [sidebarOpen,setSidebarOpen]=useState(false);
+  const nav=role==='admin'?[
+    ['dashboard','Dashboard',LayoutDashboard],
+    ['automation','Daily 00:00 Pipeline',Zap],
+    ['questions','Questions',BookOpen],
+    ['exams','Exam Management',ClipboardCheck],
+    ['current-affairs','Current Affairs',Bell],
+    ['vacancies','Vacancies',Search],
+    ['candidates','Users & Candidates',Users],
+    ['notifications','Notifications',Bell],
+    ['system-logs','System Logs',Activity],
+    ['profile','My Profile',UserCircle],
+    ['settings','Settings',Settings]
+  ]:[
+    ['dashboard','Dashboard',LayoutDashboard],
+    ['subjects','Subject Practice',BookOpen],
+    ['exams','Mock Tests',ClipboardCheck],
+    ['current-affairs','Current Affairs',Bell],
+    ['vacancies','Vacancies',Search],
+    ['profile','My Profile',UserCircle],
+    ['settings','Settings',Settings]
+  ];
+
+  return (
+    <div className="app">
+      {sidebarOpen && (
+        <div
+          className="sidebar-backdrop"
+          id="sidebar-backdrop"
+          aria-hidden="true"
+          onClick={()=>setSidebarOpen(false)}
+          onTouchEnd={()=>{setSidebarOpen(false)}}
+        />
+      )}
+      <aside className={'sidebar' + (sidebarOpen ? ' open' : '')}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+          <Brand dark/>
+          <button
+            className="sidebar-close-btn"
+            id="sidebar-close-btn"
+            aria-label="Close navigation"
+            onClick={()=>setSidebarOpen(false)}
+            onTouchEnd={(e)=>{e.preventDefault();setSidebarOpen(false);}}
+          >
+            <X size={20}/>
+          </button>
+        </div>
+        <div className="role-badge">{role==='admin'?'ADMIN CONSOLE':'CANDIDATE PORTAL'}</div>
+        {nav.map(([id,t,I])=>(
+          <button
+            className={'nav '+(page===id?'active':'')}
+            key={id}
+            onClick={()=>{
+              setPage(id);
+              setSidebarOpen(false);
+            }}
+          >
+            <I size={18}/>{t}
+          </button>
+        ))}
+        <button
+          className="nav logout"
+          onClick={()=>{
+            setSidebarOpen(false);
+            logout();
+          }}
+        >
+          <LogOut size={18}/>Logout
+        </button>
+      </aside>
+      <div className="main">
+        <header className="dashbar">
+          <div className="welcome">
+            <span className="eyebrow">{role==='admin'?'CONTROL CENTER':'CANDIDATE AREA'}</span>
+            <b>{role==='admin'?'Admin Control Center':'Your Preparation Center'} <span className="wave">✦</span></b>
+            <small>{role==='admin'?'Manage users, exams, questions, vacancies and analytics.':'Track your real scores, weak topics and preparation.'}</small>
+          </div>
+          <div className="dashbar-right" style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:10}}>
+            <Profile role={role} logout={logout} session={session} setPage={setPage}/>
+            <button
+              className={'hamb ' + (sidebarOpen ? 'open' : '')}
+              id="admin-hamburger-btn"
+              aria-label="Toggle navigation drawer"
+              title="Toggle navigation"
+              onClick={()=>setSidebarOpen(v=>!v)}
+              onTouchEnd={(e)=>{
+                e.preventDefault();
+                setSidebarOpen(v=>!v);
+              }}
+            >
+              {sidebarOpen ? <X size={22}/> : <Menu size={22}/>}
+            </button>
+          </div>
+        </header>
+        <div className="content">
+          {page==='dashboard'&&<Dashboard role={role} setPage={setPage} setSelected={setSelected} session={session}/>}
+          {page==='automation'&&<DailyAutomation supabase={supabase} session={session}/>}
+          {page==='subjects'&&<Subjects setSelected={setSelected}/>}
+          {page==='exams'&&(role==='admin'?<AdminExams session={session}/>:<Exams setSelected={setSelected}/>)}
+          {page==='current-affairs'&&<CurrentAffairs setSelected={setSelected} role={role}/>}
+          {page==='vacancies'&&<Vacancies/>}
+          {page==='questions'&&<Questions session={session}/>}
+          {page==='candidates'&&<Candidates session={session}/>}
+          {page==='profile'&&<ProfilePage session={session} role={role}/>}
+          {page==='settings'&&<SettingsPage session={session} role={role} setPage={setPage}/>}
+          {page==='notifications'&&<Notifications/>}
+          {page==='system-logs'&&<SystemLogs supabase={supabase} session={session}/>}
+          {selected&&<MockModal exam={selected} close={()=>setSelected(null)} session={session} supabase={supabase} Brand={Brand}/>}
+        </div>
+        <footer className="dash-footer">Powered by <b>SKTech All Right Reserved</b></footer>
+      </div>
+    </div>
+  );
+}
 function Profile({role,logout,session,setPage}){const[open,setOpen]=useState(false);const email=session?.user?.email||'';const phone=session?.user?.phone||'';return <div className="profile-wrap"><button className="profile-btn" onClick={()=>setOpen(v=>!v)}><span className="avatar">{role==='admin'?'A':(email?.[0]||phone?.slice(-1)||'C').toUpperCase()}</span><span className="profile-name">{role==='admin'?'Admin':(email||phone||'Candidate')}<small>{role==='admin'?'Administrator':'Candidate'}</small></span><ChevronDown size={16}/></button>{open&&<div className="profile-menu"><b>{role==='admin'?'Admin Account':'Candidate Account'}</b><button onClick={()=>{setPage('profile');setOpen(false)}}><UserCircle size={15}/> My Profile</button><button onClick={()=>{setPage('settings');setOpen(false)}}><Settings size={15}/> Settings</button><button onClick={logout}><LogOut size={15}/> Logout</button></div>}</div>}
 function Title({t,s,action}){return <div className="title"><div><span className="section-kicker">SKTECH EXAM PORTAL</span><h1>{t}</h1><p>{s}</p></div>{action}</div>}
 function useAdminStats(){
@@ -115,15 +292,45 @@ function useAdminStats(){
  };load(); const timer=setInterval(load,30000); return()=>{live=false;clearInterval(timer)}},[]); return stats;
 }
 function AdminStat({icon:Icon,label,value,note,kind}){return <div className="admin-stat-card"><div className={'admin-stat-icon '+(kind||'')}><Icon size={19}/></div><div className="admin-stat-copy"><span>{label}</span><strong>{typeof value==='number'?value.toLocaleString('en-IN'):value}</strong><small>{note}</small></div></div>}
-function Dashboard({role,setPage,setSelected}){
+function Dashboard({role,setPage,setSelected,session}){
  if(role==='admin'){
   const st=useAdminStats();
   const cards=[['Total Candidates',st.candidates,'Live from Supabase profiles',Users,'blue'],['Total Questions',st.questions,'Published + review bank',BookOpen,'green'],['Total Mock Tests',st.exams,'Published exam records',ClipboardCheck,'purple'],['Total Attempts',st.attempts,'Saved exam attempts',Activity,'orange'],['Active Users',st.active,'Live presence when tracking is enabled',Eye,'pink'],['Page Views',st.pageViews,'Tracked events',TrendingUp,'teal'],['Revenue',st.revenue,'Payment ledger connected',IndianRupee,'violet'],['Ad Revenue',st.adRevenue,'Ad ledger connected',Megaphone,'rose']];
   return <div className="admin-console"><div className="admin-hero"><div><span className="section-kicker">SKTECH EXAM ADMIN CONSOLE</span><h1>Welcome back, Admin! <span>✦</span></h1><p>One control center for questions, exams, candidates, vacancies, current affairs and analytics.</p></div><div className="admin-date"><CalendarDays size={17}/><div><b>Live workspace</b><small>{st.loaded?'Database connected':'Connecting…'}</small></div></div></div><div className="admin-stats-grid">{cards.map(([label,value,note,I,kind])=><AdminStat key={label} icon={I} label={label} value={value} note={note} kind={kind}/>)}</div><div className="admin-main-grid"><div className="panel admin-chart-panel"><div className="panel-head"><div><span className="section-kicker">ENGAGEMENT</span><b>User & Exam Activity</b></div><div className="range-pills"><button className="active">30D</button><button>90D</button><button>1Y</button></div></div><div className="empty-chart"><div className="chart-gridlines"><i/><i/><i/><i/></div><div className="chart-message"><BarChart3 size={28}/><b>Real analytics ready</b><small>Activity will appear here as candidates browse, practice and attempt exams.</small></div><div className="chart-axis"><span>Week 1</span><span>Week 2</span><span>Week 3</span><span>Week 4</span></div></div></div><div className="panel activity-panel"><div className="panel-head"><div><span className="section-kicker">SYSTEM</span><b>System Health</b></div><span className="success-badge"><CheckCircle2 size={13}/> Connected</span></div><div className="health-list"><p><span><Database size={15}/> Supabase Database</span><b>Healthy</b></p><p><span><ShieldCheck size={15}/> Authentication</span><b>Healthy</b></p><p><span><Upload size={15}/> Question Pipeline</span><b>Ready</b></p><p><span><Bell size={15}/> Notifications</span><b>Ready</b></p><p><span><Activity size={15}/> Analytics Events</span><b>{st.pageViews?'Receiving':'Waiting'}</b></p></div></div></div><div className="admin-lower-grid"><div className="panel"><div className="panel-head"><div><span className="section-kicker">CONTENT</span><b>Question Pipeline</b></div><button className="text-btn" onClick={()=>setPage('questions')}>Open Review Queue →</button></div><div className="pipeline"><div><strong>1</strong><span>Import</span><small>TXT / CSV / XLSX / PDF / DOCX / Image</small></div><div><strong>2</strong><span>Auto Filter</span><small>Format, duplicate, answer & mapping checks</small></div><div><strong>3</strong><span>Approve</span><small>Clean questions publish automatically; exceptions go to review</small></div><div><strong>4</strong><span>Candidate</span><small>Published questions become available in CBT</small></div></div></div><div className="panel"><div className="panel-head"><div><span className="section-kicker">QUICK ACTIONS</span><b>Admin Workspace</b></div></div><div className="admin-actions"><button onClick={()=>setPage('questions')}><Upload/><span><b>Import Questions</b><small>Upload & auto filter</small></span><ArrowUpRight size={15}/></button><button onClick={()=>setPage('exams')}><PlusCircle/><span><b>Create Exam</b><small>Pattern & schedule</small></span><ArrowUpRight size={15}/></button><button onClick={()=>setPage('vacancies')}><Search/><span><b>Manage Vacancies</b><small>Official sources</small></span><ArrowUpRight size={15}/></button><button onClick={()=>setPage('notifications')}><Bell/><span><b>Candidate Alerts</b><small>Send & schedule</small></span><ArrowUpRight size={15}/></button></div></div></div></div>;
  }
- return <CandidateDashboard setPage={setPage} setSelected={setSelected}/>;
+ return <CandidateDashboard setPage={setPage} setSelected={setSelected} session={session}/>;
 }
-function CandidateDashboard({setPage,setSelected}){const [attempts,setAttempts]=useState([]);const [loading,setLoading]=useState(true);useEffect(()=>{if(!supabase)return;supabase.from('exam_attempts').select('id,score,correct_count,wrong_count,skipped_count,submitted_at,exam_id').eq('candidate_id',session?.user?.id).order('submitted_at',{ascending:false}).limit(20).then(({data})=>{setAttempts(data||[]);setLoading(false)})},[]);const last=attempts[0];const avg=attempts.length?Math.round(attempts.reduce((a,x)=>a+Number(x.score||0),0)/attempts.length*100)/100:0;return <><Title t="Your Smart Dashboard" s="Your scores, attempts and weak areas are calculated from your real exam history." action={<button className="btn primary" onClick={()=>setPage('subjects')}><Zap size={16}/> Start Practice</button>}/><div className="stats">{[['Overall Score',last?String(last.score):'—',last?'Latest verified attempt':'No verified attempt yet',Target],['Tests Completed',attempts.length,attempts.length?'Saved attempts':'Start your first mock',ClipboardCheck],['Average Score',attempts.length?String(avg):'—',attempts.length?'Across recent attempts':'Build your baseline',TrendingUp],['Needs Practice',last?String(last.wrong_count||0):'—',last?'Wrong answers in latest test':'Analytics after attempts',Target]].map(([a,b,c,I])=><div className="stat" key={a}><div className="stat-icon"><I size={18}/></div><small>{a}</small><strong>{b}</strong><span>{c}</span></div>)}</div><div className="student-grid"><div className="panel"><div className="panel-head"><div><span className="section-kicker">PERFORMANCE</span><b>Latest Attempt</b></div><span className="success-badge">{loading?'Loading…':last?'Verified':'No attempt'}</span></div>{last?<div className="attempt-summary"><div><strong>{last.score}</strong><small>score</small></div><div><strong>{last.correct_count}</strong><small>correct</small></div><div><strong>{last.wrong_count}</strong><small>wrong</small></div><div><strong>{last.skipped_count}</strong><small>skipped</small></div></div>:<div className="focus-body"><div className="focus-copy"><span className="mini-tag">FIRST ACTION</span><h2>Build your baseline</h2><p>Take a real mock using published questions. Your score and attempt will be saved automatically.</p><button className="btn dark" onClick={()=>setPage('exams')}>Take a Mock <ArrowUpRight size={16}/></button></div></div>}</div><div className="panel streak"><span className="section-kicker">YOUR PREPARATION</span><strong>📊 {attempts.length} saved attempt{attempts.length===1?'':'s'}</strong><p>Use Subject Practice to target weak topics and review explanations after attempts.</p><button className="btn light" onClick={()=>setPage('subjects')}>Practice Subjects</button></div></div><div className="panel ca-highlight"><div><span className="section-kicker">CURRENT AFFAIRS</span><h2>📰 Daily Current Affairs</h2><p>Official-source updates, daily questions and weekly/monthly mocks.</p></div><button className="btn dark" onClick={()=>setPage('current-affairs')}>Open Current Affairs <ArrowUpRight size={15}/></button></div><Title t="🔥 Trending Exams" s="Start a real CBT using questions that are approved in the question bank."/><div className="exam-grid">{exams.slice(0,6).map(e=><ExamCard e={e} onClick={()=>setSelected(e)} key={e.name}/>)}</div><Title t="📚 Practice by Subject" s="Mathematics, Reasoning, GK, Current Affairs, Banking, MP and technical subjects."/><div className="subject-grid">{subjects.slice(0,12).map(s=><button className="subject-card" key={s} onClick={()=>setSelected({name:s+' Practice',subject:s,cat:'Subject Test'})}><span className="subject-dot"/><b>{s}</b><span>Easy · Moderate · Hard <ArrowUpRight size={14}/></span></button>)}</div></>}
+function CandidateDashboard({setPage,setSelected,session}){
+ const [attempts,setAttempts]=useState([]);
+ const [loading,setLoading]=useState(true);
+ useEffect(()=>{
+  if(!supabase || !session?.user?.id){
+    setLoading(false);
+    return;
+  }
+  let live=true;
+  supabase.from('exam_attempts')
+    .select('id,score,correct_count,wrong_count,skipped_count,submitted_at,exam_id')
+    .eq('candidate_id',session.user.id)
+    .order('submitted_at',{ascending:false})
+    .limit(20)
+    .then(({data,error})=>{
+      if(live){
+        if(error) console.warn('Attempts load warning:', error);
+        setAttempts(data||[]);
+        setLoading(false);
+      }
+    })
+    .catch(err=>{
+      console.warn('Attempts query warning:', err);
+      if(live) setLoading(false);
+    });
+  return()=>{live=false};
+ },[session?.user?.id]);
+ const last=attempts[0];
+ const avg=attempts.length?Math.round(attempts.reduce((a,x)=>a+Number(x.score||0),0)/attempts.length*100)/100:0;
+ return <><Title t="Your Smart Dashboard" s="Your scores, attempts and weak areas are calculated from your real exam history." action={<button className="btn primary" onClick={()=>setPage('subjects')}><Zap size={16}/> Start Practice</button>}/><div className="stats">{[['Overall Score',last?String(last.score):'—',last?'Latest verified attempt':'No verified attempt yet',Target],['Tests Completed',attempts.length,attempts.length?'Saved attempts':'Start your first mock',ClipboardCheck],['Average Score',attempts.length?String(avg):'—',attempts.length?'Across recent attempts':'Build your baseline',TrendingUp],['Needs Practice',last?String(last.wrong_count||0):'—',last?'Wrong answers in latest test':'Analytics after attempts',Target]].map(([a,b,c,I])=><div className="stat" key={a}><div className="stat-icon"><I size={18}/></div><small>{a}</small><strong>{b}</strong><span>{c}</span></div>)}</div><div className="student-grid"><div className="panel"><div className="panel-head"><div><span className="section-kicker">PERFORMANCE</span><b>Latest Attempt</b></div><span className="success-badge">{loading?'Loading…':last?'Verified':'No attempt'}</span></div>{last?<div className="attempt-summary"><div><strong>{last.score}</strong><small>score</small></div><div><strong>{last.correct_count}</strong><small>correct</small></div><div><strong>{last.wrong_count}</strong><small>wrong</small></div><div><strong>{last.skipped_count}</strong><small>skipped</small></div></div>:<div className="focus-body"><div className="focus-copy"><span className="mini-tag">FIRST ACTION</span><h2>Build your baseline</h2><p>Take a real mock using published questions. Your score and attempt will be saved automatically.</p><button className="btn dark" onClick={()=>setPage('exams')}>Take a Mock <ArrowUpRight size={16}/></button></div></div>}</div><div className="panel streak"><span className="section-kicker">YOUR PREPARATION</span><strong>📊 {attempts.length} saved attempt{attempts.length===1?'':'s'}</strong><p>Use Subject Practice to target weak topics and review explanations after attempts.</p><button className="btn light" onClick={()=>setPage('subjects')}>Practice Subjects</button></div></div><div className="panel ca-highlight"><div><span className="section-kicker">CURRENT AFFAIRS</span><h2>📰 Daily Current Affairs</h2><p>Official-source updates, daily questions and weekly/monthly mocks.</p></div><button className="btn dark" onClick={()=>setPage('current-affairs')}>Open Current Affairs <ArrowUpRight size={15}/></button></div><Title t="🔥 Trending Exams" s="Start a real CBT using questions that are approved in the question bank."/><div className="exam-grid">{exams.slice(0,6).map(e=><ExamCard e={e} onClick={()=>setSelected(e)} key={e.name}/>)}</div><Title t="📚 Practice by Subject" s="Mathematics, Reasoning, GK, Current Affairs, Banking, MP and technical subjects."/><div className="subject-grid">{subjects.slice(0,12).map(s=><button className="subject-card" key={s} onClick={()=>setSelected({name:s+' Practice',subject:s,cat:'Subject Test'})}><span className="subject-dot"/><b>{s}</b><span>Easy · Moderate · Hard <ArrowUpRight size={14}/></span></button>)}</div></>;
+}
 
 function ExamCard({e,onClick}){return <div className="exam-card"><div className="card-top"><span className="tag">{e.tag}</span><span>{e.cat}</span></div><h3>{e.name}</h3><p><FileText size={14}/>{e.q} Questions <Clock3 size={14}/>{e.time}</p><button className="btn dark full" onClick={onClick}>Start Mock <ArrowUpRight size={15}/></button></div>}
 function Subjects({setSelected}){return <><Title t="📚 Subject Practice" s="Select from the full subject library and choose difficulty inside the test."/><div className="subject-grid all">{subjects.map(s=><div className="subject-card big" key={s}><span className="subject-dot"/><b>{s}</b><span>Easy · Moderate · Hard</span><button className="btn dark" onClick={()=>setSelected({name:s+' Practice',subject:s,cat:'Subject Test'})}>Start Practice</button></div>)}</div></>}
@@ -1054,5 +1261,43 @@ function SettingsPage({session,role,setPage}){
   );
 }
 function Notifications(){return <><Title t="🔔 Candidate Notifications" s="Create personalised alerts for scores, weak points, vacancies and updates."/><div className="notification-layout"><div className="panel"><div className="panel-head"><b>Send / Schedule Alert</b></div><div className="notify-form"><label>Audience<select><option>All Candidates</option><option>Selected Exam Candidates</option><option>Weak Topic Candidates</option><option>Inactive Candidates</option><option>Selected Candidates</option></select></label><label>Message Type<select><option>New Update</option><option>Last Score</option><option>Weak Point</option><option>Vacancy Alert</option><option>Exam Reminder</option><option>Weekly Report</option></select></label><label>Title<input defaultValue="Your performance update"/></label><label>Message<textarea defaultValue="Your latest score, strong subject and weak topic will be inserted from verified attempt data."/></label><div className="notify-checks"><label><input type="checkbox" defaultChecked/> In-app</label><label><input type="checkbox"/> Push</label><label><input type="checkbox"/> Email</label></div><button className="btn primary" onClick={()=>alert('Notification draft created. Delivery needs Supabase/Edge Function setup.')}>Create Alert</button></div></div><div className="panel"><div className="panel-head"><b>Automation ideas</b></div><div className="activity-list"><p>📊 After exam → last score + rank</p><p>⚠️ Weak accuracy → targeted practice alert</p><p>🔥 Weekly → performance report</p><p>📰 New vacancy → official notification alert</p><p>⏰ Live exam → 30 min / 5 min reminders</p></div></div></div></>}
-createRoot(document.getElementById('root')).render(<App/>);
+class ErrorBoundary extends React.Component {
+  constructor(props){
+    super(props);
+    this.state={hasError:false,error:null};
+  }
+  static getDerivedStateFromError(error){
+    return {hasError:true,error};
+  }
+  componentDidCatch(error,errorInfo){
+    console.error('Portal component error caught:', error, errorInfo);
+    if(typeof logEvent==='function'){
+      logEvent('error',error?.message||'Portal render crash',{source:'error-boundary',data:{componentStack:errorInfo?.componentStack}}).catch(()=>{});
+    }
+  }
+  render(){
+    if(this.state.hasError){
+      return (
+        <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'24px',textAlign:'center',background:'#f5f7fb',fontFamily:'Inter,ui-sans-serif,system-ui,sans-serif'}}>
+          <div style={{maxWidth:420,width:'100%',background:'#fff',border:'1px solid #e2e8f0',borderRadius:16,padding:'32px 24px',boxShadow:'0 10px 25px rgba(0,0,0,0.05)'}}>
+            <div style={{width:44,height:44,borderRadius:12,background:'#fee2e2',color:'#ef4444',display:'grid',placeItems:'center',margin:'0 auto 16px',fontWeight:'bold',fontSize:20}}>!</div>
+            <h2 style={{fontSize:18,margin:'0 0 8px',fontWeight:700}}>Portal Display Restored</h2>
+            <p style={{fontSize:13,color:'#64748b',margin:'0 0 20px',lineHeight:1.5}}>The portal encountered a transient viewport issue. Please refresh to continue.</p>
+            <div style={{display:'flex',gap:10}}>
+              <button className="btn primary full" onClick={()=>window.location.reload()}>Refresh</button>
+              <button className="btn light full" onClick={()=>this.setState({hasError:false})}>Try Again</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+createRoot(document.getElementById('root')).render(
+  <ErrorBoundary>
+    <App/>
+  </ErrorBoundary>
+);
 

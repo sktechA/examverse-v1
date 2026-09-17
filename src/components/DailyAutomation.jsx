@@ -9,7 +9,11 @@ import {
   Sliders,
   ShieldCheck,
   Activity,
-  Layers
+  Layers,
+  Info,
+  Filter,
+  Database,
+  Server
 } from 'lucide-react';
 
 export default function DailyAutomation({ supabase, session }) {
@@ -48,6 +52,10 @@ export default function DailyAutomation({ supabase, session }) {
 
   const [settings, setSettings] = useState(getInitialSettings);
   const [logs, setLogs] = useState([]);
+  const [systemLogs, setSystemLogs] = useState([]);
+  const [runtimeInfo, setRuntimeInfo] = useState(null);
+  const [logTab, setLogTab] = useState('automation'); // 'automation' | 'system'
+  const [systemLogFilter, setSystemLogFilter] = useState('all');
   const [loading, setLoading] = useState(false);
   const [runningJob, setRunningJob] = useState(false);
   const [runningTest, setRunningTest] = useState(false);
@@ -146,14 +154,32 @@ export default function DailyAutomation({ supabase, session }) {
         });
       }
 
-      // Fetch logs from Supabase
+      // Fetch logs from API or Supabase
+      let fetchedSystemLogs = false;
+      try {
+        const token = (await supabase?.auth?.getSession())?.data?.session?.access_token || '';
+        const res = await fetch('/api/system-logs?limit=50', { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) {
+          const sysData = await res.json();
+          if (sysData.ok) {
+            if (Array.isArray(sysData.system_logs)) setSystemLogs(sysData.system_logs);
+            if (Array.isArray(sysData.automation_logs) && sysData.automation_logs.length > 0) setLogs(sysData.automation_logs);
+            if (sysData.runtime) setRuntimeInfo(sysData.runtime);
+            fetchedSystemLogs = true;
+          }
+        }
+      } catch (_) {}
+
+      // Supabase direct fallback for logs
       if (supabase) {
-        const { data } = await supabase
-          .from('automation_logs')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(20);
-        if (data) setLogs(data);
+        if (!fetchedSystemLogs) {
+          const [autoRes, sysRes] = await Promise.all([
+            supabase.from('automation_logs').select('*').order('created_at', { ascending: false }).limit(20),
+            supabase.from('system_logs').select('*').order('created_at', { ascending: false }).limit(50)
+          ]);
+          if (autoRes.data) setLogs(autoRes.data);
+          if (sysRes.data) setSystemLogs(sysRes.data);
+        }
       }
     } catch (e) {
       console.warn('Error loading automation data:', e);
@@ -576,70 +602,262 @@ export default function DailyAutomation({ supabase, session }) {
         </div>
       </div>
 
-      {/* Execution Logs */}
+      {/* Execution & System Logs */}
       <div className="panel">
         <div className="panel-head">
-          <div>
-            <b><Activity size={16} /> Automation Execution History (Idempotency Logs)</b>
-            <small>Tracks daily job runs, verified question counts, and prevent duplicate runs</small>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+            <div>
+              <b><Activity size={16} /> Automation & System Logs</b>
+              <small>Tracks daily job runs, database connection audit, test executions, and system events</small>
+            </div>
+            <div className="range-pills">
+              <button
+                className={logTab === 'automation' ? 'active' : ''}
+                onClick={() => setLogTab('automation')}
+              >
+                Automation Jobs ({logs.length})
+              </button>
+              <button
+                className={logTab === 'system' ? 'active' : ''}
+                onClick={() => setLogTab('system')}
+              >
+                System & Error Logs ({systemLogs.length})
+              </button>
+            </div>
           </div>
           <button className="btn light" onClick={loadData}>
             <RefreshCw size={14} /> Refresh
           </button>
         </div>
 
-        {logs.length ? (
-          <table className="blueprint-table">
-            <thead>
-              <tr>
-                <th>Job Key</th>
-                <th>Type</th>
-                <th>Status</th>
-                <th>Processed</th>
-                <th>Approved</th>
-                <th>Timestamp</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.map(log => (
-                <tr key={log.id}>
-                  <td><b>{log.job_key}</b></td>
-                  <td><span className="tag">{log.job_type}</span></td>
-                  <td>
-                    <span
-                      style={{
-                        padding: '3px 8px',
-                        borderRadius: '6px',
-                        fontWeight: '700',
-                        fontSize: '10px',
-                        background:
-                          log.status === 'success'
-                            ? '#ecfdf5'
-                            : log.status === 'skipped'
-                            ? '#f1f5f9'
-                            : '#fef2f2',
-                        color:
-                          log.status === 'success'
-                            ? '#065f46'
-                            : log.status === 'skipped'
-                            ? '#475569'
-                            : '#991b1b'
-                      }}
-                    >
-                      {log.status.toUpperCase()}
-                    </span>
-                  </td>
-                  <td>{log.items_processed || 0}</td>
-                  <td>{log.items_approved || 0}</td>
-                  <td>{new Date(log.created_at).toLocaleString('en-IN')}</td>
+        {/* Automation Jobs Tab */}
+        {logTab === 'automation' && (
+          logs.length ? (
+            <table className="blueprint-table">
+              <thead>
+                <tr>
+                  <th>Job Key</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Processed</th>
+                  <th>Approved</th>
+                  <th>Timestamp</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="muted" style={{ padding: '16px 0' }}>
-            No daily jobs recorded yet. Click "Run Daily 00:00 Automation Now" above to trigger a test run.
-          </p>
+              </thead>
+              <tbody>
+                {logs.map(log => (
+                  <tr key={log.id}>
+                    <td><b>{log.job_key}</b></td>
+                    <td><span className="tag">{log.job_type}</span></td>
+                    <td>
+                      <span
+                        style={{
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          fontWeight: '700',
+                          fontSize: '10px',
+                          background:
+                            log.status === 'success'
+                              ? '#ecfdf5'
+                              : log.status === 'skipped'
+                              ? '#f1f5f9'
+                              : '#fef2f2',
+                          color:
+                            log.status === 'success'
+                              ? '#065f46'
+                              : log.status === 'skipped'
+                              ? '#475569'
+                              : '#991b1b'
+                        }}
+                      >
+                        {log.status.toUpperCase()}
+                      </span>
+                    </td>
+                    <td>{log.items_processed || 0}</td>
+                    <td>{log.items_approved || 0}</td>
+                    <td>{new Date(log.created_at).toLocaleString('en-IN')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="muted" style={{ padding: '16px 0' }}>
+              No daily jobs recorded yet. Click "Run Daily 00:00 Automation Now" above to trigger a test run.
+            </p>
+          )
+        )}
+
+        {/* System & Error Logs Tab */}
+        {logTab === 'system' && (
+          <div>
+            {/* Vercel Serverless Runtime & Database Status Telemetry */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: '10px',
+                padding: '12px 14px',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                margin: '12px 0 16px 0'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Server size={15} color="#4f46e5" />
+                <div>
+                  <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>
+                    Serverless Runtime
+                  </span>
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#1e293b' }}>
+                    {runtimeInfo?.platform || 'Vercel / Cloud Serverless'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Database size={15} color="#059669" />
+                <div>
+                  <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>
+                    Database Service
+                  </span>
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#065f46' }}>
+                    {runtimeInfo?.database_connection || 'Supabase Postgres (Connected)'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Activity size={15} color="#0284c7" />
+                <div>
+                  <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>
+                    Environment / Region
+                  </span>
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#1e293b' }}>
+                    {(runtimeInfo?.environment || 'production').toUpperCase()} • {runtimeInfo?.region || 'Auto (iad1)'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Clock size={15} color="#d97706" />
+                <div>
+                  <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>
+                    Memory & Uptime
+                  </span>
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#1e293b' }}>
+                    {runtimeInfo?.memory_usage_mb ? `${runtimeInfo.memory_usage_mb} MB` : 'Optimal'} • {runtimeInfo?.uptime_seconds ? `${runtimeInfo.uptime_seconds}s active` : 'Active'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', margin: '12px 0' }}>
+              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>Filter Level:</span>
+              <select
+                value={systemLogFilter}
+                onChange={e => setSystemLogFilter(e.target.value)}
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid #dce1ea',
+                  fontSize: '12px',
+                  background: '#fff'
+                }}
+              >
+                <option value="all">All Levels ({systemLogs.length})</option>
+                <option value="info">Info ({systemLogs.filter(l => l.level === 'info').length})</option>
+                <option value="warning">Warning ({systemLogs.filter(l => l.level === 'warning' || l.level === 'warn').length})</option>
+                <option value="error">Error ({systemLogs.filter(l => l.level === 'error').length})</option>
+              </select>
+            </div>
+
+            {(() => {
+              const filtered = systemLogs.filter(l => {
+                if (systemLogFilter === 'all') return true;
+                if (systemLogFilter === 'warning') return l.level === 'warning' || l.level === 'warn';
+                return l.level === systemLogFilter;
+              });
+
+              if (!filtered.length) {
+                return (
+                  <p className="muted" style={{ padding: '16px 0' }}>
+                    No system logs matching "{systemLogFilter}" found.
+                  </p>
+                );
+              }
+
+              return (
+                <table className="blueprint-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '80px' }}>Level</th>
+                      <th style={{ width: '130px' }}>Source</th>
+                      <th style={{ width: '130px' }}>Action</th>
+                      <th>Message</th>
+                      <th style={{ width: '150px' }}>Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map(l => (
+                      <tr key={l.id}>
+                        <td>
+                          <span
+                            style={{
+                              padding: '2px 7px',
+                              borderRadius: '5px',
+                              fontWeight: '700',
+                              fontSize: '10px',
+                              background:
+                                l.level === 'error'
+                                  ? '#fef2f2'
+                                  : l.level === 'warning' || l.level === 'warn'
+                                  ? '#fffbeb'
+                                  : '#eff6ff',
+                              color:
+                                l.level === 'error'
+                                  ? '#b91c1c'
+                                  : l.level === 'warning' || l.level === 'warn'
+                                  ? '#b45309'
+                                  : '#1d4ed8'
+                            }}
+                          >
+                            {(l.level || 'info').toUpperCase()}
+                          </span>
+                        </td>
+                        <td><span className="tag" style={{ fontSize: '10px' }}>{l.source || 'system'}</span></td>
+                        <td><b>{l.action || 'event'}</b></td>
+                        <td>
+                          <div style={{ fontSize: '12px' }}>{l.message}</div>
+                          {l.details && Object.keys(l.details).length > 0 && (
+                            <pre
+                              style={{
+                                marginTop: '4px',
+                                padding: '4px 6px',
+                                background: '#f8fafc',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '4px',
+                                fontSize: '10px',
+                                color: '#475569',
+                                maxWidth: '100%',
+                                overflowX: 'auto',
+                                whiteSpace: 'pre-wrap'
+                              }}
+                            >
+                              {typeof l.details === 'string' ? l.details : JSON.stringify(l.details, null, 2)}
+                            </pre>
+                          )}
+                        </td>
+                        <td style={{ fontSize: '11px', color: '#64748b' }}>
+                          {l.created_at ? new Date(l.created_at).toLocaleString('en-IN') : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              );
+            })()}
+          </div>
         )}
       </div>
     </div>

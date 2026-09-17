@@ -441,7 +441,7 @@ export default async function handler(req, res) {
 
     // Sub-step B2: Use already-approved database inventory before invoking Gemini.
     // This avoids unnecessary Gemini calls and lets the daily pipeline consume the real question bank first.
-    if (candidateQuestions.length < remainingTarget && sb) {
+    if (candidateQuestions.length < remainingTarget && sb && maxSeeds > 0 && !integrityTestMode) {
       try {
         const { data: approvedInventory } = await sb
           .from('questions')

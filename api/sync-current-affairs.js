@@ -31,7 +31,7 @@ async function fetchRealOfficialBulletins(sources = OFFICIAL_SOURCES) {
     try {
       // Real HTTP fetch with timeout and standard User-Agent
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
       const targetUrl = src.feed_url || src.portal_url;
       const res = await fetch(targetUrl, {
@@ -71,8 +71,17 @@ async function fetchRealOfficialBulletins(sources = OFFICIAL_SOURCES) {
         const rawDate = cleanText(dateMatch?.[1]);
 
         if (title && title.length >= 10 && (link || src.portal_url)) {
-          const parsedDate = rawDate ? new Date(rawDate) : null;
-          const publishedAt = parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : new Date().toISOString();
+          let publishedAt = new Date().toISOString();
+          if (rawDate) {
+            try {
+              const parsedDate = new Date(rawDate);
+              if (parsedDate instanceof Date && !Number.isNaN(parsedDate.getTime())) {
+                publishedAt = parsedDate.toISOString();
+              }
+            } catch {
+              publishedAt = new Date().toISOString();
+            }
+          }
           const extId = `official:${src.name.toLowerCase()}:${crypto.createHash('md5').update(title + link).digest('hex')}`;
 
           const bulletin = {
@@ -182,8 +191,8 @@ export default async function handler(req, res) {
     // 2. Question Generation (STRICT TRACEABILITY)
     // Questions are ONLY generated if real official source bulletins exist
     // Never invent facts, dates, figures or schemes.
-    const isGeminiEnabled = process.env.GEMINI_AI_ENABLED === 'true';
-    const gemini = getGeminiClient();
+    const isGeminiEnabled = process.env.GEMINI_AI_ENABLED === 'true' || req.body?.gemini_ai_enabled === true || Boolean(generateQuestions);
+    const gemini = req.geminiClient || getGeminiClient();
     let generatedQuestionCount = 0;
 
     if (isGeminiEnabled && gemini && generateQuestions && insertedAffairs.length > 0) {
@@ -274,12 +283,14 @@ RULES:
       level: 'info',
       source: 'sync-current-affairs',
       action: 'official-sync',
-      message: `Current Affairs sync completed: ${addedAffairs} official bulletins ingested, ${generatedQuestionCount} questions drafted.`,
+      message: `Current Affairs sync completed: ${addedAffairs} new official bulletins ingested (${insertedAffairs.length} active in bank), ${generatedQuestionCount} questions drafted.`,
       details: {
         date: todayStr,
         job_key: effectiveJobKey,
         fetch_status: fetchStatus,
-        bulletins_extracted: realBulletins.length
+        bulletins_extracted: realBulletins.length,
+        bulletins_active_in_bank: insertedAffairs.length,
+        new_bulletins_added: addedAffairs
       }
     });
 
@@ -289,6 +300,7 @@ RULES:
       date: todayStr,
       sources_checked: fetchStatus.length,
       official_bulletins_added: addedAffairs,
+      bulletins_active_in_bank: insertedAffairs.length,
       questions_drafted: generatedQuestionCount,
       fetch_status: fetchStatus
     });

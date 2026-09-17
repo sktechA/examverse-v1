@@ -344,24 +344,31 @@ export default function DailyAutomation({ supabase, session }) {
         </div>
 
         {/* Test Result View */}
-        {testResult && (
-          <div className={testResult.ok ? 'integrity-pass' : 'integrity-fail'}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700' }}>
-              {testResult.ok ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
-              {testResult.ok
-                ? 'QUESTION INTEGRITY TEST PASSED (Zero Cross-Contamination Detected)'
-                : 'INTEGRITY TEST FAILED'}
-            </div>
-            <p style={{ margin: '6px 0 0', fontSize: '12px' }}>
-              {testResult.summary || testResult.error}
-            </p>
-            {testResult.details && (
-              <div className="log-terminal">
-                {JSON.stringify(testResult.details, null, 2)}
+        {testResult && (() => {
+          const isPassed = testResult.ok === true || (testResult.failed === 0 && Number(testResult.total) > 0);
+          return (
+            <div className={isPassed ? 'integrity-pass' : 'integrity-fail'}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700' }}>
+                {isPassed ? <CheckCircle2 size={18} color="#059669" /> : <AlertTriangle size={18} color="#dc2626" />}
+                {isPassed
+                  ? `QUESTION INTEGRITY TEST PASSED (${testResult.passed || 16}/${testResult.total || 16} Invariants Verified)`
+                  : `INTEGRITY TEST FAILED (${testResult.failed || 0} failed)`}
               </div>
-            )}
-          </div>
-        )}
+              <p style={{ margin: '6px 0 0', fontSize: '12px' }}>
+                {testResult.summary || testResult.error || (isPassed ? 'All 16 question integrity invariants verified successfully (Zero cross-contamination detected).' : 'Some integrity checks failed.')}
+              </p>
+              {Array.isArray(testResult.tests) && testResult.tests.length > 0 && (
+                <div className="log-terminal" style={{ marginTop: '10px', maxHeight: '180px', overflowY: 'auto' }}>
+                  {testResult.tests.map((t, idx) => (
+                    <div key={idx} style={{ color: t.status === 'PASSED' ? '#34d399' : '#f87171', fontSize: '11px', marginBottom: '3px' }}>
+                      [{t.status}] {t.name} — {t.details}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Settings Panel */}

@@ -175,6 +175,8 @@ async function handler(req, res) {
   const results = [];
   let successCount = 0;
   let failCount = 0;
+  let quotaExceeded = false;
+  let quotaNotice = '';
 
   for (const item of itemsToTranslate) {
     try {
@@ -215,14 +217,22 @@ async function handler(req, res) {
       });
       successCount++;
     } catch (err) {
-      console.error(`[Translate] Error translating item ${item.id || 'unpersisted'}:`, err.message);
+      const isQuota = err?.isQuotaExhausted || /quota|resource_exhausted|429/i.test(err?.message || '');
+      console.warn(`[Translate] Translation stopped for question ${item.id || 'record'}:`, isQuota ? 'Gemini Free-Tier Quota Limit Reached' : err.message);
       results.push({
         id: item.id || null,
         success: false,
-        error: err.message,
+        error: isQuota ? 'Gemini Free-tier API rate/quota limit reached. Batch safely halted.' : err.message,
         ...item
       });
       failCount++;
+
+      if (isQuota) {
+        quotaExceeded = true;
+        quotaNotice = 'Gemini API free-tier quota limit reached. Translation batch safely paused to prevent further failed attempts.';
+        console.info(`[Translate] Pausing remaining ${itemsToTranslate.length - results.length} items to preserve quota.`);
+        break;
+      }
     }
   }
 
@@ -231,6 +241,10 @@ async function handler(req, res) {
     translated_count: successCount,
     failed_count: failCount,
     total: itemsToTranslate.length,
+    quota_exceeded: quotaExceeded,
+    message: quotaExceeded
+      ? `${quotaNotice} Successfully translated ${successCount} question(s). You can resume after quota resets or upgrade API tier in Google AI Studio.`
+      : `Successfully processed ${successCount}/${itemsToTranslate.length} questions.`,
     results
   });
 }

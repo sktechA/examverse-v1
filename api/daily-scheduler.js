@@ -245,7 +245,8 @@ Return JSON in this EXACT structure:
       timeoutMs: retryOptions.timeoutMs || 20000,
       maxRetries: retryOptions.maxRetries !== undefined ? retryOptions.maxRetries : 3,
       initialDelayMs: retryOptions.initialDelayMs || (retryOptions.testMode ? 15 : 1000),
-      operationName: 'Gemini Batch Review'
+      operationName: retryOptions.operationName || 'Gemini Batch Review',
+      silent: Boolean(retryOptions.silent)
     }
   );
 
@@ -308,7 +309,8 @@ export default async function handler(req, res) {
       testMode: integrityTestMode,
       initialDelayMs: integrityTestMode ? 15 : 1000,
       timeoutMs: integrityTestMode ? 5000 : 20000,
-      maxRetries: 3
+      maxRetries: 3,
+      silent: req?.body?.silent === true || integrityTestMode
     };
     const allowTestGemini = integrityTestMode && Boolean(req?.geminiClient || req?.body?.geminiClient);
     const isAiConfigured = (allowTestGemini || !integrityTestMode) && (process.env.GEMINI_AI_ENABLED === 'true' || config.gemini_ai_enabled === true || req?.body?.gemini_ai_enabled === true || req?.body?.enableAi === true || forceAiReview);
@@ -618,7 +620,9 @@ export default async function handler(req, res) {
             }
           }
         } catch (revErr) {
-          console.warn('[Scheduler Gemini Review Error]:', revErr.message);
+          if (!retryOptions.silent) {
+            console.warn('[Scheduler Gemini Review Error]:', revErr.message);
+          }
           // Gemini errors/timeouts must NEVER cause auto-approval (Requirement 2 & 8)
           for (const q of batch) {
             reviewedQuestions.push({

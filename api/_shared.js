@@ -334,18 +334,45 @@ export async function callGeminiWithRetry(fn, options = {}) {
       const status = err?.status || err?.statusCode || err?.response?.status;
       const msg = String(err?.message || '');
       const is503 = status === 503 || /503|service\s*unavailable/i.test(msg);
-      const isTransient = is503 ||
-        status === 429 ||
-        err?.isTimeout ||
-        /timeout|timed\s*out|ETIMEDOUT|ECONNRESET|resource_exhausted|unavailable|overloaded/i.test(msg);
+      const is429 = status === 429 || /resource_exhausted|quota|429/i.test(msg);
 
-      if (!isTransient || attempt === maxRetries) {
-        console.warn(`[GeminiRetry] ${operationName} final failure on attempt ${attempt + 1}/${maxRetries + 1}:`, msg);
+      // Check for hard daily quota exhaustion vs short per-minute rate limit
+      const isDailyQuota = /perday|daily\s*quota|per\s*day/i.test(msg);
+      let retryDelaySeconds = 0;
+      const matchDelay = msg.match(/retry\s*in\s*(\d+(\.\d+)?)s/i) || msg.match(/retryDelay["']?\s*:\s*["']?(\d+)s/i);
+      if (matchDelay) {
+        retryDelaySeconds = Math.ceil(parseFloat(matchDelay[1]));
+      }
+
+      // If hard daily quota is hit or required delay is > 10s, fail fast to avoid serverless timeout and API hammering
+      if (isDailyQuota || (is429 && retryDelaySeconds > 10)) {
+        err.isQuotaExhausted = true;
+        err.retryDelaySeconds = retryDelaySeconds;
+        if (!options.silent) {
+          console.warn(`[GeminiQuota] ${operationName} quota exhausted (${isDailyQuota ? 'Daily limit' : `Wait ${retryDelaySeconds}s`}). Aborting rapid retries.`);
+        }
         break;
       }
 
-      const backoff = initialDelay * Math.pow(2, attempt);
-      console.warn(`[GeminiRetry] ${operationName} encountered recoverable error on attempt ${attempt + 1}/${maxRetries + 1} (${msg}). Retrying in ${backoff}ms...`);
+      const isTransient = is503 ||
+        is429 ||
+        err?.isTimeout ||
+        /timeout|timed\s*out|ETIMEDOUT|ECONNRESET|unavailable|overloaded/i.test(msg);
+
+      if (!isTransient || attempt === maxRetries) {
+        if (!options.silent) {
+          console.warn(`[GeminiRetry] ${operationName} final failure on attempt ${attempt + 1}/${maxRetries + 1}:`, msg);
+        }
+        break;
+      }
+
+      let backoff = initialDelay * Math.pow(2, attempt);
+      if (retryDelaySeconds > 0 && retryDelaySeconds <= 10) {
+        backoff = Math.max(backoff, retryDelaySeconds * 1000);
+      }
+      if (!options.silent) {
+        console.warn(`[GeminiRetry] ${operationName} encountered recoverable error on attempt ${attempt + 1}/${maxRetries + 1} (${msg}). Retrying in ${backoff}ms...`);
+      }
       await new Promise(r => setTimeout(r, backoff));
     }
   }

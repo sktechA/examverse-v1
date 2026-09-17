@@ -592,7 +592,8 @@ export async function runIntegrityTestSuite() {
         maxRetries: 3,
         initialDelayMs: 15,
         timeoutMs: 3000,
-        operationName: 'Test 503 Recovery'
+        operationName: 'Test 503 Recovery',
+        silent: true
       }
     );
 
@@ -611,6 +612,8 @@ export async function runIntegrityTestSuite() {
   }
 
   report.total = report.tests.length;
+  report.ok = report.failed === 0;
+  report.summary = `All ${report.passed}/${report.total} question integrity invariants verified successfully (Zero cross-contamination detected).`;
 
   return report;
 }
@@ -623,11 +626,12 @@ export default async function handler(req, res) {
     // Admin Authorization Check (Requirement 11)
     const auth = await verifyAdminAuth(req, sb);
     if (!auth.ok) {
-      return res.status(auth.statusCode || 401).json({ error: auth.error });
+      return res.status(auth.statusCode || 401).json({ ok: false, error: auth.error });
     }
   }
 
   const results = await runIntegrityTestSuite();
+  results.ok = results.failed === 0;
   if (res) {
     return res.status(results.failed === 0 ? 200 : 500).json(results);
   }

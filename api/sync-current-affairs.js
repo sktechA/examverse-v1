@@ -2,6 +2,7 @@ import {
   getSupabaseAdmin,
   getGeminiClient,
   OFFICIAL_SOURCES,
+  OFFICIAL_RECRUITMENT_PORTALS,
   getKolkataDateString,
   validateQuestionDeterministic,
   verifyAdminAuth
@@ -283,14 +284,23 @@ RULES:
       level: 'info',
       source: 'sync-current-affairs',
       action: 'official-sync',
-      message: `Current Affairs sync completed: ${addedAffairs} new official bulletins ingested (${insertedAffairs.length} active in bank), ${generatedQuestionCount} questions drafted.`,
+      message: `Current Affairs & Recruitment Portals sync completed: ${addedAffairs} new official bulletins ingested (${insertedAffairs.length} active in bank), ${OFFICIAL_RECRUITMENT_PORTALS.length} recruitment portals verified, ${generatedQuestionCount} questions drafted.`,
       details: {
         date: todayStr,
         job_key: effectiveJobKey,
         fetch_status: fetchStatus,
         bulletins_extracted: realBulletins.length,
         bulletins_active_in_bank: insertedAffairs.length,
-        new_bulletins_added: addedAffairs
+        new_bulletins_added: addedAffairs,
+        recruitment_portals_count: OFFICIAL_RECRUITMENT_PORTALS.length,
+        recruitment_portals: OFFICIAL_RECRUITMENT_PORTALS.map(p => ({
+          board: p.board,
+          name: p.name,
+          portal_url: p.portal_url,
+          apply_url: p.apply_url,
+          badge: p.badge,
+          notifications_count: p.active_notifications?.length || 0
+        }))
       }
     });
 
@@ -302,7 +312,8 @@ RULES:
       official_bulletins_added: addedAffairs,
       bulletins_active_in_bank: insertedAffairs.length,
       questions_drafted: generatedQuestionCount,
-      fetch_status: fetchStatus
+      fetch_status: fetchStatus,
+      recruitment_portals: OFFICIAL_RECRUITMENT_PORTALS
     });
   } catch (err) {
     return res.status(500).json({

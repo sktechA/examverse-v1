@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Clock3, X, Zap } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Clock3, X, Zap, Pause } from 'lucide-react';
 
 function cleanAnswer(v = '') {
   const m = String(v).trim().match(/^\s*([ABCD])(?:\s*[.)]|\s|$)/i);
@@ -60,21 +60,27 @@ function shuffleArray(arr) {
 }
 
 export default function MockModal({ exam, close, session, supabase, Brand }) {
+  const recovery = exam?._recoveryState || null;
+  const recoveryResult = exam?._recoveryResult || null;
+
   // Requirement 8: EXACT database configuration values (no hardcoded fallback for existing database exam)
-  const [config, setConfig] = useState({
-    durationMinutes: exam.duration_minutes !== undefined && exam.duration_minutes !== null
-      ? Number(exam.duration_minutes)
-      : (parseInt(exam.time) || 60),
-    totalQuestionsLimit: exam.total_questions !== undefined && exam.total_questions !== null
-      ? Number(exam.total_questions)
-      : (parseInt(exam.q) || 25),
-    marksPerQuestion: exam.marks_per_question !== undefined && exam.marks_per_question !== null
-      ? Number(exam.marks_per_question)
-      : 1,
-    negativeMarking: exam.negative_marking !== undefined && exam.negative_marking !== null
-      ? Number(exam.negative_marking)
-      : (parseFloat(exam.negative) || 0),
-    shouldRandomize: exam.randomize_questions !== false
+  const [config, setConfig] = useState(() => {
+    if (recovery?.config) return recovery.config;
+    return {
+      durationMinutes: exam.duration_minutes !== undefined && exam.duration_minutes !== null
+        ? Number(exam.duration_minutes)
+        : (parseInt(exam.time) || 60),
+      totalQuestionsLimit: exam.total_questions !== undefined && exam.total_questions !== null
+        ? Number(exam.total_questions)
+        : (parseInt(exam.q) || 25),
+      marksPerQuestion: exam.marks_per_question !== undefined && exam.marks_per_question !== null
+        ? Number(exam.marks_per_question)
+        : 1,
+      negativeMarking: exam.negative_marking !== undefined && exam.negative_marking !== null
+        ? Number(exam.negative_marking)
+        : (parseFloat(exam.negative) || 0),
+      shouldRandomize: exam.randomize_questions !== false
+    };
   });
 
   const durationMinutes = config.durationMinutes;
@@ -83,24 +89,146 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
   const negativeMarking = config.negativeMarking;
   const shouldRandomize = config.shouldRandomize;
 
-  const [time, setTime] = useState(durationMinutes * 60);
-  const [questions, setQuestions] = useState([]);
-  const [q, setQ] = useState(0);
-  const [answers, setAnswers] = useState({});
-  const [review, setReview] = useState({});
-  const [loading, setLoading] = useState(true);
+  const [time, setTime] = useState(() => {
+    if (recovery?.time_remaining !== undefined) return recovery.time_remaining;
+    return durationMinutes * 60;
+  });
+  const [questions, setQuestions] = useState(() => {
+    if (recovery?.questions?.length) return recovery.questions;
+    if (exam._recoveryQuestions?.length) return exam._recoveryQuestions;
+    return [];
+  });
+  const [q, setQ] = useState(() => {
+    if (recovery?.current_q_index !== undefined) return recovery.current_q_index;
+    return 0;
+  });
+  const [answers, setAnswers] = useState(() => {
+    if (recovery?.answers) return recovery.answers;
+    if (exam._recoveryAnswers) return exam._recoveryAnswers;
+    return {};
+  });
+  const [review, setReview] = useState(() => {
+    if (recovery?.review) return recovery.review;
+    return {};
+  });
+  const [loading, setLoading] = useState(() => {
+    if (recoveryResult || recovery?.questions?.length) return false;
+    return true;
+  });
   const [msg, setMsg] = useState('');
-  const [submitted, setSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState(() => !!recoveryResult);
   const [showFive, setShowFive] = useState(false);
   const [showOne, setShowOne] = useState(false);
-  const [result, setResult] = useState(null);
-  const [startedAt] = useState(new Date().toISOString());
-  const [langMode, setLangMode] = useState('both'); // 'both' | 'en' | 'hi'
+  const [result, setResult] = useState(() => recoveryResult || null);
+  const [startedAt] = useState(() => recovery?.started_at || new Date().toISOString());
+  const [langMode, setLangMode] = useState(() => recovery?.lang_mode || 'both'); // 'both' | 'en' | 'hi'
   const [showSolutions, setShowSolutions] = useState(false);
+
+  // Synchronized refs for tracking active state during unloads, timer ticks, and disconnects
+  const timeRef = useRef(time);
+  timeRef.current = time;
+  const answersRef = useRef(answers);
+  answersRef.current = answers;
+  const reviewRef = useRef(review);
+  reviewRef.current = review;
+  const qRef = useRef(q);
+  qRef.current = q;
+  const langModeRef = useRef(langMode);
+  langModeRef.current = langMode;
+  const questionsRef = useRef(questions);
+  questionsRef.current = questions;
+  const configRef = useRef(config);
+  configRef.current = config;
+  const startedAtRef = useRef(startedAt);
+  startedAtRef.current = startedAt;
+
+  const getStorageKey = () => `sktech_active_exam_${session?.user?.id || 'candidate'}`;
+
+  const persistActiveSession = (customTime, customAnswers, customReview, customQ, customLang) => {
+    if (submitted || !questionsRef.current?.length) return;
+    const curQuestions = questionsRef.current;
+    const curTime = customTime !== undefined ? customTime : timeRef.current;
+    const curAnswers = customAnswers !== undefined ? customAnswers : answersRef.current;
+    const curReview = customReview !== undefined ? customReview : reviewRef.current;
+    const curQ = customQ !== undefined ? customQ : qRef.current;
+    const curLang = customLang !== undefined ? customLang : langModeRef.current;
+
+    const payload = {
+      session_id: recovery?.session_id || `ses_${Date.now()}`,
+      candidate_id: session?.user?.id || 'candidate',
+      candidate_email: session?.user?.email || '',
+      exam_id: exam.id || null,
+      status: 'in_progress',
+      exam: {
+        id: exam.id || null,
+        title: exam.title || exam.name,
+        name: exam.name || exam.title,
+        subject: exam.subject || null,
+        cat: exam.cat || 'Admin Exam',
+        duration_minutes: configRef.current.durationMinutes,
+        total_questions: configRef.current.totalQuestionsLimit,
+        marks_per_question: configRef.current.marksPerQuestion,
+        negative_marking: configRef.current.negativeMarking,
+        randomize_questions: configRef.current.shouldRandomize
+      },
+      started_at: startedAtRef.current,
+      last_active_at: new Date().toISOString(),
+      time_remaining: curTime,
+      current_q_index: curQ,
+      answers: curAnswers,
+      review: curReview,
+      lang_mode: curLang,
+      questions: curQuestions,
+      config: configRef.current
+    };
+
+    try {
+      const k = getStorageKey();
+      localStorage.setItem(k, JSON.stringify(payload));
+      localStorage.setItem('sktech_interrupted_exam_session', JSON.stringify(payload));
+    } catch (e) {
+      console.warn('Active session persist warning:', e);
+    }
+  };
+
+  const clearActiveSession = () => {
+    try {
+      const k = getStorageKey();
+      localStorage.removeItem(k);
+      localStorage.removeItem('sktech_interrupted_exam_session');
+    } catch (e) {
+      console.warn('Active session clear warning:', e);
+    }
+  };
+
+  // Sync state whenever answers, review, question index, or language mode changes
+  useEffect(() => {
+    if (!loading && !submitted && questions.length > 0) {
+      persistActiveSession();
+    }
+  }, [answers, review, q, langMode, loading, submitted, questions.length]);
+
+  // Window unload / disconnection safeguards
+  useEffect(() => {
+    if (loading || submitted || !questions.length) return;
+    const handleUnload = () => {
+      persistActiveSession();
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('pagehide', handleUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('pagehide', handleUnload);
+    };
+  }, [loading, submitted, questions.length]);
 
   useEffect(() => {
     let live = true;
     const load = async () => {
+      if (recovery?.questions?.length > 0 || recoveryResult) {
+        setLoading(false);
+        return;
+      }
       if (!supabase) {
         setLoading(false);
         return;
@@ -312,6 +440,7 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
       auto
     };
 
+    clearActiveSession();
     setResult(finished);
     setSubmitted(true);
     setMsg('');
@@ -348,6 +477,9 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
             submit(true);
             return 0;
           }
+          if (t % 5 === 0) {
+            persistActiveSession(t - 1);
+          }
           return t - 1;
         }),
       1000
@@ -374,14 +506,24 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
   }
 
   if (result) {
+    const handleResultClose = () => {
+      clearActiveSession();
+      close();
+    };
+
     return (
       <div className="modal-bg">
-        <div className="modal result-modal" style={{ maxWidth: '560px' }}>
+        <div className="modal result-modal" style={{ maxWidth: '560px', position: 'relative' }}>
+          <button className="close" onClick={handleResultClose}><X /></button>
           <BrandComponent />
-          <span className="pill">EXAM COMPLETED</span>
+          <span className="pill">
+            {result.interruptedSubmission ? 'INTERRUPTED SESSION EVALUATED' : 'EXAM COMPLETED'}
+          </span>
           <h2>{exam.title || exam.name}</h2>
           <p className="muted">
-            {result.auto
+            {result.interruptedSubmission
+              ? 'Your unsubmitted exam was concluded. Attempted answers have been verified and saved to your history.'
+              : result.auto
               ? 'Time expired and your exam was submitted automatically.'
               : 'Your exam has been submitted and verified against official answer keys.'}
           </p>
@@ -433,7 +575,7 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
             >
               {showSolutions ? 'Hide Solutions' : '📖 View Solutions & Explanations'}
             </button>
-            <button className="btn dark" onClick={close}>
+            <button className="btn dark" onClick={handleResultClose}>
               Return to Dashboard
             </button>
           </div>
@@ -652,6 +794,25 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
               {String(Math.floor(time / 60)).padStart(2, '0')}:
               {String(time % 60).padStart(2, '0')}
             </strong>
+
+            <button
+              type="button"
+              className="btn light"
+              onClick={() => {
+                persistActiveSession();
+                close();
+              }}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                gap: '5px',
+                borderRadius: '8px',
+                border: '1px solid #e2e8f0'
+              }}
+              title="Pause and safely exit. Your progress and remaining time will be saved."
+            >
+              <Pause size={13} /> Pause & Exit
+            </button>
           </div>
         </div>
 

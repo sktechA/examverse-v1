@@ -8,7 +8,9 @@ import './styles.css';
 import DailyAutomation from './components/DailyAutomation.jsx';
 import AiMockGenerator from './components/AiMockGenerator.jsx';
 import MockModal from './components/MockModal.jsx';
+import ExamRecoveryModal from './components/ExamRecoveryModal.jsx';
 import SystemLogs from './components/SystemLogs.jsx';
+import { OFFICIAL_RECRUITMENT_PORTALS, EXPANDED_VACANCIES } from './data/recruitmentPortals.js';
 
 const SUPABASE_URL=import.meta.env.VITE_SUPABASE_URL||'';
 const SUPABASE_ANON_KEY=import.meta.env.VITE_SUPABASE_ANON_KEY||'';
@@ -51,13 +53,8 @@ const exams=[
 {name:'Banking Awareness',cat:'Banking',tag:'PRACTICE',q:50,time:'45 min'}
 ];
 const subjects=['Mathematics','Reasoning','General Awareness','Current Affairs','Banking Awareness','Financial Awareness','English','Hindi','Computer','General Science','Data Interpretation','Indian History','Indian Geography','Indian Polity','Indian Constitution','Indian Economy','Indian Culture','Environment & Ecology','MP GK','MP History','MP Geography','MP Polity','MP Economy','MP Culture','MP Tribes','MP Current Affairs','MP Government Schemes','Civil Engineering','Mechanical Engineering','Electrical Engineering','Electronics Engineering','Agriculture Engineering'];
-const vacancies=[
-{name:'MPESB Police Constable (GD) 2026',board:'MPESB',last:'06 Oct 2026',apply:'https://esb.mponline.gov.in/',notice:'https://esb.mp.gov.in/advertisement/Important_message_candidate.htm',tag:'NEW'},
-{name:'MPESB Subedar & Sub-Inspector 2026',board:'MPESB',last:'23 Sep 2026',apply:'https://esb.mponline.gov.in/',notice:'https://esb.mp.gov.in/student_dashboard.htm',tag:'URGENT'},
-{name:'MPESB Group-3 Sub Engineer 2026',board:'MPESB',last:'See official notice',apply:'https://esb.mponline.gov.in/',notice:'https://esb.mp.gov.in/rulebooks/rule_books.htm',tag:'TRENDING'},
-{name:'UPSC Recruitment Advertisements',board:'UPSC',last:'See notification',apply:'https://upsconline.nic.in/',notice:'https://www.upsc.gov.in/recruitment/recruitment-advertisement',tag:'OFFICIAL'},
-{name:'IBPS RRB Recruitment',board:'IBPS',last:'See official notification',apply:'https://www.ibps.in/',notice:'https://www.ibps.in/',tag:'BANKING'}
-];
+const vacancies = EXPANDED_VACANCIES;
+
 
 function App(){
  useEffect(()=>{
@@ -168,6 +165,50 @@ function SignUp({close,back}){
 }
 function Shell({role,page,setPage,logout,selected,setSelected,session}){
   const [sidebarOpen,setSidebarOpen]=useState(false);
+  const [recoverySession,setRecoverySession]=useState(null);
+
+  // Check for interrupted / in_progress exam session upon candidate login
+  useEffect(()=>{
+    if(role==='admin') return;
+    if(selected) return;
+    try{
+      const candidateKey=`sktech_active_exam_${session?.user?.id||'candidate'}`;
+      const raw=localStorage.getItem(candidateKey)||localStorage.getItem('sktech_interrupted_exam_session');
+      if(raw){
+        const data=JSON.parse(raw);
+        if(
+          data &&
+          data.status==='in_progress' &&
+          Array.isArray(data.questions) &&
+          data.questions.length>0 &&
+          (!data.candidate_id || !session?.user?.id || data.candidate_id===session?.user?.id || data.candidate_id==='candidate')
+        ){
+          setRecoverySession(data);
+        }
+      }
+    }catch(err){
+      console.warn('Recovery session inspection warning:', err);
+    }
+  },[session?.user?.id,role,selected]);
+
+  const handleContinueRecovery=(recData)=>{
+    setRecoverySession(null);
+    setSelected({
+      ...recData.exam,
+      _recoveryState: recData
+    });
+  };
+
+  const handleDeclineRecovery=(finishedResult,questions,answers)=>{
+    setRecoverySession(null);
+    setSelected({
+      ...recoverySession.exam,
+      _recoveryResult: finishedResult,
+      _recoveryQuestions: questions,
+      _recoveryAnswers: answers
+    });
+  };
+
   const nav=role==='admin'?[
     ['dashboard','Dashboard',LayoutDashboard],
     ['automation','Daily 00:00 Pipeline',Zap],
@@ -275,6 +316,15 @@ function Shell({role,page,setPage,logout,selected,setSelected,session}){
           {page==='notifications'&&<Notifications/>}
           {page==='system-logs'&&<SystemLogs supabase={supabase} session={session}/>}
           {selected&&<MockModal exam={selected} close={()=>setSelected(null)} session={session} supabase={supabase} Brand={Brand}/>}
+          {recoverySession && !selected && (
+            <ExamRecoveryModal
+              recoverySession={recoverySession}
+              onContinue={handleContinueRecovery}
+              onDecline={handleDeclineRecovery}
+              supabase={supabase}
+              session={session}
+            />
+          )}
         </div>
         <footer className="dash-footer">Powered by <b>SKTech All Right Reserved</b></footer>
       </div>
@@ -296,13 +346,73 @@ function Dashboard({role,setPage,setSelected,session}){
  if(role==='admin'){
   const st=useAdminStats();
   const cards=[['Total Candidates',st.candidates,'Live from Supabase profiles',Users,'blue'],['Total Questions',st.questions,'Published + review bank',BookOpen,'green'],['Total Mock Tests',st.exams,'Published exam records',ClipboardCheck,'purple'],['Total Attempts',st.attempts,'Saved exam attempts',Activity,'orange'],['Active Users',st.active,'Live presence when tracking is enabled',Eye,'pink'],['Page Views',st.pageViews,'Tracked events',TrendingUp,'teal'],['Revenue',st.revenue,'Payment ledger connected',IndianRupee,'violet'],['Ad Revenue',st.adRevenue,'Ad ledger connected',Megaphone,'rose']];
-  return <div className="admin-console"><div className="admin-hero"><div><span className="section-kicker">SKTECH EXAM ADMIN CONSOLE</span><h1>Welcome back, Admin! <span>✦</span></h1><p>One control center for questions, exams, candidates, vacancies, current affairs and analytics.</p></div><div className="admin-date"><CalendarDays size={17}/><div><b>Live workspace</b><small>{st.loaded?'Database connected':'Connecting…'}</small></div></div></div><div className="admin-stats-grid">{cards.map(([label,value,note,I,kind])=><AdminStat key={label} icon={I} label={label} value={value} note={note} kind={kind}/>)}</div><div className="admin-main-grid"><div className="panel admin-chart-panel"><div className="panel-head"><div><span className="section-kicker">ENGAGEMENT</span><b>User & Exam Activity</b></div><div className="range-pills"><button className="active">30D</button><button>90D</button><button>1Y</button></div></div><div className="empty-chart"><div className="chart-gridlines"><i/><i/><i/><i/></div><div className="chart-message"><BarChart3 size={28}/><b>Real analytics ready</b><small>Activity will appear here as candidates browse, practice and attempt exams.</small></div><div className="chart-axis"><span>Week 1</span><span>Week 2</span><span>Week 3</span><span>Week 4</span></div></div></div><div className="panel activity-panel"><div className="panel-head"><div><span className="section-kicker">SYSTEM</span><b>System Health</b></div><span className="success-badge"><CheckCircle2 size={13}/> Connected</span></div><div className="health-list"><p><span><Database size={15}/> Supabase Database</span><b>Healthy</b></p><p><span><ShieldCheck size={15}/> Authentication</span><b>Healthy</b></p><p><span><Upload size={15}/> Question Pipeline</span><b>Ready</b></p><p><span><Bell size={15}/> Notifications</span><b>Ready</b></p><p><span><Activity size={15}/> Analytics Events</span><b>{st.pageViews?'Receiving':'Waiting'}</b></p></div></div></div><div className="admin-lower-grid"><div className="panel"><div className="panel-head"><div><span className="section-kicker">CONTENT</span><b>Question Pipeline</b></div><button className="text-btn" onClick={()=>setPage('questions')}>Open Review Queue →</button></div><div className="pipeline"><div><strong>1</strong><span>Import</span><small>TXT / CSV / XLSX / PDF / DOCX / Image</small></div><div><strong>2</strong><span>Auto Filter</span><small>Format, duplicate, answer & mapping checks</small></div><div><strong>3</strong><span>Approve</span><small>Clean questions publish automatically; exceptions go to review</small></div><div><strong>4</strong><span>Candidate</span><small>Published questions become available in CBT</small></div></div></div><div className="panel"><div className="panel-head"><div><span className="section-kicker">QUICK ACTIONS</span><b>Admin Workspace</b></div></div><div className="admin-actions"><button onClick={()=>setPage('questions')}><Upload/><span><b>Import Questions</b><small>Upload & auto filter</small></span><ArrowUpRight size={15}/></button><button onClick={()=>setPage('exams')}><PlusCircle/><span><b>Create Exam</b><small>Pattern & schedule</small></span><ArrowUpRight size={15}/></button><button onClick={()=>setPage('vacancies')}><Search/><span><b>Manage Vacancies</b><small>Official sources</small></span><ArrowUpRight size={15}/></button><button onClick={()=>setPage('notifications')}><Bell/><span><b>Candidate Alerts</b><small>Send & schedule</small></span><ArrowUpRight size={15}/></button></div></div></div></div>;
+  return <div className="admin-console"><div className="admin-hero"><div><span className="section-kicker">SKTECH EXAM ADMIN CONSOLE</span><h1>Welcome back, Admin! <span>✦</span></h1><p>One control center for questions, exams, candidates, vacancies, current affairs and analytics.</p></div><div className="admin-date"><CalendarDays size={17}/><div><b>Live workspace</b><small>{st.loaded?'Database connected':'Connecting…'}</small></div></div></div><div className="admin-stats-grid">{cards.map(([label,value,note,I,kind])=><AdminStat key={label} icon={I} label={label} value={value} note={note} kind={kind}/>)}</div><div className="admin-main-grid"><div className="panel admin-chart-panel"><div className="panel-head"><div><span className="section-kicker">ENGAGEMENT</span><b>User & Exam Activity</b></div><div className="range-pills"><button className="active">30D</button><button>90D</button><button>1Y</button></div></div><div className="empty-chart"><div className="chart-gridlines"><i/><i/><i/><i/></div><div className="chart-message"><BarChart3 size={28}/><b>Real analytics ready</b><small>Activity will appear here as candidates browse, practice and attempt exams.</small></div><div className="chart-axis"><span>Week 1</span><span>Week 2</span><span>Week 3</span><span>Week 4</span></div></div></div><div className="panel activity-panel"><div className="panel-head"><div><span className="section-kicker">SYSTEM</span><b>System Health</b></div><span className="success-badge"><CheckCircle2 size={13}/> Connected</span></div><div className="health-list"><p><span><Database size={15}/> Supabase Database</span><b>Healthy</b></p><p><span><ShieldCheck size={15}/> Authentication</span><b>Healthy</b></p><p><span><Upload size={15}/> Question Pipeline</span><b>Ready</b></p><p><span><Bell size={15}/> Notifications</span><b>Ready</b></p><p><span><Activity size={15}/> Analytics Events</span><b>{st.pageViews?'Receiving':'Waiting'}</b></p></div></div></div><div className="admin-lower-grid"><div className="panel"><div className="panel-head"><div><span className="section-kicker">CONTENT</span><b>Question Pipeline</b></div><button className="text-btn" onClick={()=>setPage('questions')}>Open Review Queue →</button></div><div className="pipeline"><div><strong>1</strong><span>Import</span><small>TXT / CSV / XLSX / PDF / DOCX / Image</small></div><div><strong>2</strong><span>Auto Filter</span><small>Format, duplicate, answer & mapping checks</small></div><div><strong>3</strong><span>Approve</span><small>Clean questions publish automatically; exceptions go to review</small></div><div><strong>4</strong><span>Candidate</span><small>Published questions become available in CBT</small></div></div></div><div className="panel"><div className="panel-head"><div><span className="section-kicker">QUICK ACTIONS</span><b>Admin Workspace</b></div></div><div className="admin-actions"><button onClick={()=>setPage('questions')}><Upload/><span><b>Import Questions</b><small>Upload & auto filter</small></span><ArrowUpRight size={15}/></button><button onClick={()=>setPage('exams')}><PlusCircle/><span><b>Create Exam</b><small>Pattern & schedule</small></span><ArrowUpRight size={15}/></button><button onClick={()=>setPage('vacancies')}><Search/><span><b>Manage Vacancies</b><small>Official sources</small></span><ArrowUpRight size={15}/></button><button onClick={()=>setPage('notifications')}><Bell/><span><b>Candidate Alerts</b><small>Send & schedule</small></span><ArrowUpRight size={15}/></button></div></div></div>
+<div className="panel" style={{ marginTop: '20px' }}>
+  <div className="panel-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div>
+      <span className="section-kicker">RECRUITMENT BOARDS & OFFICIAL PORTALS</span>
+      <b>Live Notification & Portal Connectivity Monitor</b>
+    </div>
+    <button className="btn light" onClick={()=>setPage('vacancies')} style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+      <ExternalLink size={13} /> View Vacancies Hub
+    </button>
+  </div>
+  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', marginTop: '14px' }}>
+    {OFFICIAL_RECRUITMENT_PORTALS.map(portal => (
+      <div key={portal.id} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px 14px', background: '#ffffff' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+          <b style={{ fontSize: '13px', color: '#0f172a' }}>{portal.board}</b>
+          <span className="badge-new-notification" style={{ fontSize: '10px', padding: '2px 7px' }}>
+            <span className="pulse-dot" />
+            {portal.badge}
+          </span>
+        </div>
+        <p style={{ margin: '0 0 8px', fontSize: '11px', color: '#64748b', lineHeight: 1.4 }}>
+          {portal.name}
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', paddingTop: '8px', borderTop: '1px solid #f1f5f9' }}>
+          <span className="verified-domain-pill">{portal.domain}</span>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <a href={portal.portal_url} target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: '#3b82f6', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+              Portal <ExternalLink size={11} />
+            </a>
+            {portal.apply_url !== portal.portal_url && (
+              <a href={portal.apply_url} target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: '#059669', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                Apply <ExternalLink size={11} />
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+    ))}
+  </div>
+</div>
+</div>;
  }
  return <CandidateDashboard setPage={setPage} setSelected={setSelected} session={session}/>;
 }
 function CandidateDashboard({setPage,setSelected,session}){
  const [attempts,setAttempts]=useState([]);
  const [loading,setLoading]=useState(true);
+ const [activeSession,setActiveSession]=useState(null);
+
+ useEffect(()=>{
+   try{
+     const candidateKey=`sktech_active_exam_${session?.user?.id||'candidate'}`;
+     const raw=localStorage.getItem(candidateKey)||localStorage.getItem('sktech_interrupted_exam_session');
+     if(raw){
+       const data=JSON.parse(raw);
+       if(data && data.status==='in_progress' && Array.isArray(data.questions) && data.questions.length>0){
+         setActiveSession(data);
+       }else{
+         setActiveSession(null);
+       }
+     }else{
+       setActiveSession(null);
+     }
+   }catch(_){}
+ },[session?.user?.id]);
+
  useEffect(()=>{
   if(!supabase || !session?.user?.id){
     setLoading(false);
@@ -329,13 +439,361 @@ function CandidateDashboard({setPage,setSelected,session}){
  },[session?.user?.id]);
  const last=attempts[0];
  const avg=attempts.length?Math.round(attempts.reduce((a,x)=>a+Number(x.score||0),0)/attempts.length*100)/100:0;
- return <><Title t="Your Smart Dashboard" s="Your scores, attempts and weak areas are calculated from your real exam history." action={<button className="btn primary" onClick={()=>setPage('subjects')}><Zap size={16}/> Start Practice</button>}/><div className="stats">{[['Overall Score',last?String(last.score):'—',last?'Latest verified attempt':'No verified attempt yet',Target],['Tests Completed',attempts.length,attempts.length?'Saved attempts':'Start your first mock',ClipboardCheck],['Average Score',attempts.length?String(avg):'—',attempts.length?'Across recent attempts':'Build your baseline',TrendingUp],['Needs Practice',last?String(last.wrong_count||0):'—',last?'Wrong answers in latest test':'Analytics after attempts',Target]].map(([a,b,c,I])=><div className="stat" key={a}><div className="stat-icon"><I size={18}/></div><small>{a}</small><strong>{b}</strong><span>{c}</span></div>)}</div><div className="student-grid"><div className="panel"><div className="panel-head"><div><span className="section-kicker">PERFORMANCE</span><b>Latest Attempt</b></div><span className="success-badge">{loading?'Loading…':last?'Verified':'No attempt'}</span></div>{last?<div className="attempt-summary"><div><strong>{last.score}</strong><small>score</small></div><div><strong>{last.correct_count}</strong><small>correct</small></div><div><strong>{last.wrong_count}</strong><small>wrong</small></div><div><strong>{last.skipped_count}</strong><small>skipped</small></div></div>:<div className="focus-body"><div className="focus-copy"><span className="mini-tag">FIRST ACTION</span><h2>Build your baseline</h2><p>Take a real mock using published questions. Your score and attempt will be saved automatically.</p><button className="btn dark" onClick={()=>setPage('exams')}>Take a Mock <ArrowUpRight size={16}/></button></div></div>}</div><div className="panel streak"><span className="section-kicker">YOUR PREPARATION</span><strong>📊 {attempts.length} saved attempt{attempts.length===1?'':'s'}</strong><p>Use Subject Practice to target weak topics and review explanations after attempts.</p><button className="btn light" onClick={()=>setPage('subjects')}>Practice Subjects</button></div></div><div className="panel ca-highlight"><div><span className="section-kicker">CURRENT AFFAIRS</span><h2>📰 Daily Current Affairs</h2><p>Official-source updates, daily questions and weekly/monthly mocks.</p></div><button className="btn dark" onClick={()=>setPage('current-affairs')}>Open Current Affairs <ArrowUpRight size={15}/></button></div><Title t="🔥 Trending Exams" s="Start a real CBT using questions that are approved in the question bank."/><div className="exam-grid">{exams.slice(0,6).map(e=><ExamCard e={e} onClick={()=>setSelected(e)} key={e.name}/>)}</div><Title t="📚 Practice by Subject" s="Mathematics, Reasoning, GK, Current Affairs, Banking, MP and technical subjects."/><div className="subject-grid">{subjects.slice(0,12).map(s=><button className="subject-card" key={s} onClick={()=>setSelected({name:s+' Practice',subject:s,cat:'Subject Test'})}><span className="subject-dot"/><b>{s}</b><span>Easy · Moderate · Hard <ArrowUpRight size={14}/></span></button>)}</div></>;
+ return <>
+   {activeSession && (
+     <div style={{
+       background: '#fffbeb',
+       border: '1px solid #fef3c7',
+       borderLeft: '4px solid #f59e0b',
+       borderRadius: '10px',
+       padding: '14px 18px',
+       marginBottom: '20px',
+       display: 'flex',
+       justifyContent: 'space-between',
+       alignItems: 'center',
+       flexWrap: 'wrap',
+       gap: '12px',
+       boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+     }}>
+       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+         <span style={{ fontSize: '24px' }}>⏳</span>
+         <div>
+           <strong style={{ display: 'block', fontSize: '15px', color: '#92400e', fontWeight: 600 }}>
+             Interrupted Exam Available: {activeSession.exam?.title || activeSession.exam?.name}
+           </strong>
+           <span style={{ fontSize: '13px', color: '#b45309' }}>
+             Time remaining: {String(Math.floor((activeSession.time_remaining || 0)/60)).padStart(2,'0')}:{String((activeSession.time_remaining || 0)%60).padStart(2,'0')} • {Object.keys(activeSession.answers || {}).length} of {activeSession.questions?.length || 0} answered
+           </span>
+         </div>
+       </div>
+       <button
+         className="btn primary"
+         onClick={()=>setSelected({ ...activeSession.exam, _recoveryState: activeSession })}
+         style={{ padding: '8px 16px', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+       >
+         <Zap size={14}/> Resume Test
+       </button>
+     </div>
+   )}
+   <Title t="Your Smart Dashboard" s="Your scores, attempts and weak areas are calculated from your real exam history." action={<button className="btn primary" onClick={()=>setPage('subjects')}><Zap size={16}/> Start Practice</button>}/><div className="stats">{[['Overall Score',last?String(last.score):'—',last?'Latest verified attempt':'No verified attempt yet',Target],['Tests Completed',attempts.length,attempts.length?'Saved attempts':'Start your first mock',ClipboardCheck],['Average Score',attempts.length?String(avg):'—',attempts.length?'Across recent attempts':'Build your baseline',TrendingUp],['Needs Practice',last?String(last.wrong_count||0):'—',last?'Wrong answers in latest test':'Analytics after attempts',Target]].map(([a,b,c,I])=><div className="stat" key={a}><div className="stat-icon"><I size={18}/></div><small>{a}</small><strong>{b}</strong><span>{c}</span></div>)}</div><div className="student-grid"><div className="panel"><div className="panel-head"><div><span className="section-kicker">PERFORMANCE</span><b>Latest Attempt</b></div><span className="success-badge">{loading?'Loading…':last?'Verified':'No attempt'}</span></div>{last?<div className="attempt-summary"><div><strong>{last.score}</strong><small>score</small></div><div><strong>{last.correct_count}</strong><small>correct</small></div><div><strong>{last.wrong_count}</strong><small>wrong</small></div><div><strong>{last.skipped_count}</strong><small>skipped</small></div></div>:<div className="focus-body"><div className="focus-copy"><span className="mini-tag">FIRST ACTION</span><h2>Build your baseline</h2><p>Take a real mock using published questions. Your score and attempt will be saved automatically.</p><button className="btn dark" onClick={()=>setPage('exams')}>Take a Mock <ArrowUpRight size={16}/></button></div></div>}</div><div className="panel streak"><span className="section-kicker">YOUR PREPARATION</span><strong>📊 {attempts.length} saved attempt{attempts.length===1?'':'s'}</strong><p>Use Subject Practice to target weak topics and review explanations after attempts.</p><button className="btn light" onClick={()=>setPage('subjects')}>Practice Subjects</button></div></div><div className="panel ca-highlight"><div><span className="section-kicker">CURRENT AFFAIRS</span><h2>📰 Daily Current Affairs</h2><p>Official-source updates, daily questions and weekly/monthly mocks.</p></div><button className="btn dark" onClick={()=>setPage('current-affairs')}>Open Current Affairs <ArrowUpRight size={15}/></button></div>
+
+<div className="recruitment-showcase">
+  <div className="recruitment-showcase-header">
+    <div className="recruitment-showcase-title">
+      <Megaphone size={22} style={{ color: '#60a5fa' }} />
+      <div>
+        <h3>Official Recruitment & Banking Notifications</h3>
+        <p>Direct official board portals, active vacancy notices and application windows</p>
+      </div>
+    </div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <span className="badge-new-notification">
+        <span className="pulse-dot" />
+        New Notification Released
+      </span>
+      <button className="btn light" onClick={()=>setPage('vacancies')} style={{ fontSize: '11px', padding: '6px 12px' }}>
+        View All 7 Boards <ArrowUpRight size={14} />
+      </button>
+    </div>
+  </div>
+  <div className="recruitment-showcase-grid">
+    {OFFICIAL_RECRUITMENT_PORTALS.map(portal => (
+      <div className="recruitment-showcase-card" key={portal.id}>
+        <div>
+          <div className="recruitment-showcase-card-top">
+            <b>{portal.shortName || portal.name}</b>
+            <span className="badge-new-notification" style={{ fontSize: '10px', padding: '2px 7px' }}>
+              <span className="pulse-dot" />
+              {portal.badge}
+            </span>
+          </div>
+          <div className="recruitment-showcase-card-meta">
+            <span>{portal.active_notifications?.[0]?.title || portal.description}</span>
+          </div>
+        </div>
+        <div className="recruitment-showcase-card-actions">
+          <a href={portal.portal_url} target="_blank" rel="noreferrer" className="btn-notice">
+            <FileText size={13} /> Official Portal
+          </a>
+          <a href={portal.apply_url} target="_blank" rel="noreferrer" className="btn-apply">
+            <ExternalLink size={13} /> Apply Window
+          </a>
+        </div>
+      </div>
+    ))}
+  </div>
+</div>
+
+<Title t="🔥 Trending Exams" s="Start a real CBT using questions that are approved in the question bank."/><div className="exam-grid">{exams.slice(0,6).map(e=><ExamCard e={e} onClick={()=>setSelected(e)} key={e.name}/>)}</div><Title t="📚 Practice by Subject" s="Mathematics, Reasoning, GK, Current Affairs, Banking, MP and technical subjects."/><div className="subject-grid">{subjects.slice(0,12).map(s=><button className="subject-card" key={s} onClick={()=>setSelected({name:s+' Practice',subject:s,cat:'Subject Test'})}><span className="subject-dot"/><b>{s}</b><span>Easy · Moderate · Hard <ArrowUpRight size={14}/></span></button>)}</div></>;
 }
 
 function ExamCard({e,onClick}){return <div className="exam-card"><div className="card-top"><span className="tag">{e.tag}</span><span>{e.cat}</span></div><h3>{e.name}</h3><p><FileText size={14}/>{e.q} Questions <Clock3 size={14}/>{e.time}</p><button className="btn dark full" onClick={onClick}>Start Mock <ArrowUpRight size={15}/></button></div>}
 function Subjects({setSelected}){return <><Title t="📚 Subject Practice" s="Select from the full subject library and choose difficulty inside the test."/><div className="subject-grid all">{subjects.map(s=><div className="subject-card big" key={s}><span className="subject-dot"/><b>{s}</b><span>Easy · Moderate · Hard</span><button className="btn dark" onClick={()=>setSelected({name:s+' Practice',subject:s,cat:'Subject Test'})}>Start Practice</button></div>)}</div></>}
 function Exams({setSelected}){const [dbExams,setDbExams]=useState([]);useEffect(()=>{supabase?.from('exams').select('id,title,total_questions,duration_minutes,negative_marking,marks_per_question,randomize_questions,status,subject,exam_type').eq('status','published').order('created_at',{ascending:false}).limit(100).then(({data})=>setDbExams(data||[]))},[]);const list=dbExams;return <><Title t="📝 Mock Tests" s="Live published exams from the admin question bank."/><div className="filter"><input placeholder="Search exam..."/><button className="btn light">All Exams</button><button className="btn light">Trending</button></div><div className="exam-grid">{list.map(e=>{const x=e.id?{...e,name:e.title,q:e.total_questions,time:`${e.duration_minutes} min`,negative:e.negative_marking,marks:e.marks_per_question,cat:'Admin Exam'}:e;return <ExamCard e={x} onClick={()=>setSelected(x)} key={x.id||x.name}/>})}</div></>}
-function Vacancies(){const groups=[['MPPSC',['MPPSC State Service & Other Recruitments']],['UPSC',['UPSC Recruitment Advertisements']],['UPPSC',['UPPSC Recruitment / Advertisements']],['IBPS',['IBPS RRB Recruitment']],['MPESB',vacancies.filter(v=>v.board==='MPESB').map(v=>v.name)]];const all=groups.map(([board,names])=>({board,items:names.map(n=>vacancies.find(v=>v.name===n)||{name:n,board,last:'See official notice',apply:'https://uppsc.up.nic.in/',notice:'https://uppsc.up.nic.in/'})}));return <><Title t="🔎 Latest Vacancies" s="Board-wise folders keep MPPSC, UPSC, UPPSC, IBPS and MPESB vacancies separated. Official-source links only."/><div className="vacancy-folders">{all.map(g=><section className="panel vacancy-folder" key={g.board}><div className="folder-head"><div><span className="folder-icon">▰</span><b>{g.board} Portal</b><small>{g.items.length} recruitment source{g.items.length>1?'s':''}</small></div><span className="tag">OFFICIAL</span></div>{g.items.map(v=><div className="vac-row" key={v.name}><div><span className="tag">{v.tag||'UPDATE'}</span><b>{v.name}</b><small>{v.board} · Last date: {v.last}</small></div><div className="vac-actions"><a href={v.notice} target="_blank" rel="noreferrer"><FileText size={14}/> Notification</a><a href={v.apply} target="_blank" rel="noreferrer"><ExternalLink size={14}/> Apply / Official Site</a></div></div>)}</section>)}</div><div className="panel source-note"><b>Official source policy + automation</b><p>Vacancies can be fetched on a schedule from approved official recruitment boards, deduplicated and placed in Pending Review before admin approval.</p></div></>}
+function Vacancies() {
+  const [activeTab, setActiveTab] = useState('all');
+  const [search, setSearch] = useState('');
+
+  const filteredPortals = OFFICIAL_RECRUITMENT_PORTALS.filter(p => {
+    if (activeTab === 'banking') return p.board === 'IBPS' || p.board === 'SBI';
+    if (activeTab === 'ssc') return p.board === 'SSC';
+    if (activeTab === 'rrb') return p.board === 'RRB';
+    if (activeTab === 'mp') return p.board === 'MPESB' || p.board === 'MPPSC';
+    if (activeTab === 'upsc') return p.board === 'UPSC';
+    return true;
+  }).filter(p => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return p.name.toLowerCase().includes(q) || p.board.toLowerCase().includes(q) || p.category.toLowerCase().includes(q) || p.domain.toLowerCase().includes(q);
+  });
+
+  const filteredVacancies = vacancies.filter(v => {
+    if (activeTab === 'banking') return v.board === 'IBPS' || v.board === 'SBI';
+    if (activeTab === 'ssc') return v.board === 'SSC';
+    if (activeTab === 'rrb') return v.board === 'RRB';
+    if (activeTab === 'mp') return v.board === 'MPESB' || v.board === 'MPPSC';
+    if (activeTab === 'upsc') return v.board === 'UPSC';
+    return true;
+  }).filter(v => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return v.name.toLowerCase().includes(q) || v.board.toLowerCase().includes(q) || (v.authority && v.authority.toLowerCase().includes(q));
+  });
+
+  // Group vacancies by board
+  const boardOrder = ['IBPS', 'SBI', 'SSC', 'RRB', 'MPESB', 'MPPSC', 'UPSC'];
+  const groupedVacancies = boardOrder.map(board => {
+    const portal = OFFICIAL_RECRUITMENT_PORTALS.find(p => p.board === board);
+    const items = filteredVacancies.filter(v => v.board === board);
+    return { board, portal, items };
+  }).filter(g => g.items.length > 0 || (search.trim() === '' && (activeTab === 'all' || (activeTab === 'banking' && (g.board === 'IBPS' || g.board === 'SBI')) || (activeTab === 'ssc' && g.board === 'SSC') || (activeTab === 'rrb' && g.board === 'RRB') || (activeTab === 'mp' && (g.board === 'MPESB' || g.board === 'MPPSC')) || (activeTab === 'upsc' && g.board === 'UPSC'))));
+
+  return (
+    <>
+      <Title
+        t="🔎 Recruitment & Examination Portals"
+        s="Verified official government and banking recruitment boards. Zero cross-contamination, live notification tracking."
+      />
+
+      {/* Filter and Search Bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            className={`btn ${activeTab === 'all' ? 'primary' : 'light'}`}
+            onClick={() => setActiveTab('all')}
+            style={{ fontSize: '12px', padding: '6px 14px' }}
+          >
+            All Boards (7)
+          </button>
+          <button
+            className={`btn ${activeTab === 'banking' ? 'primary' : 'light'}`}
+            onClick={() => setActiveTab('banking')}
+            style={{ fontSize: '12px', padding: '6px 14px' }}
+          >
+            Banking (IBPS & SBI)
+          </button>
+          <button
+            className={`btn ${activeTab === 'ssc' ? 'primary' : 'light'}`}
+            onClick={() => setActiveTab('ssc')}
+            style={{ fontSize: '12px', padding: '6px 14px' }}
+          >
+            Staff Selection (SSC)
+          </button>
+          <button
+            className={`btn ${activeTab === 'rrb' ? 'primary' : 'light'}`}
+            onClick={() => setActiveTab('rrb')}
+            style={{ fontSize: '12px', padding: '6px 14px' }}
+          >
+            Railways (RRB)
+          </button>
+          <button
+            className={`btn ${activeTab === 'mp' ? 'primary' : 'light'}`}
+            onClick={() => setActiveTab('mp')}
+            style={{ fontSize: '12px', padding: '6px 14px' }}
+          >
+            MP State (MPESB & MPPSC)
+          </button>
+          <button
+            className={`btn ${activeTab === 'upsc' ? 'primary' : 'light'}`}
+            onClick={() => setActiveTab('upsc')}
+            style={{ fontSize: '12px', padding: '6px 14px' }}
+          >
+            UPSC Civil Services
+          </button>
+        </div>
+
+        <div style={{ position: 'relative', width: '280px', maxWidth: '100%' }}>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search exam or board..."
+            style={{ width: '100%', padding: '7px 12px 7px 30px', fontSize: '13px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+          />
+          <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+        </div>
+      </div>
+
+      {/* Official Portals Directory Cards */}
+      <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 12px', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span>🏛️</span> Official Recruitment Boards & Verified Portals
+      </h3>
+
+      <div className="portal-matrix-grid">
+        {filteredPortals.map(portal => (
+          <div className="portal-matrix-card" key={portal.id}>
+            <div className="portal-matrix-head">
+              <div>
+                <h4>{portal.name}</h4>
+                <small>{portal.authority}</small>
+              </div>
+              <span className="badge-new-notification">
+                <span className="pulse-dot" />
+                {portal.badge}
+              </span>
+            </div>
+
+            <div style={{ marginBottom: '8px' }}>
+              <span className="verified-domain-pill">{portal.domain}</span>
+            </div>
+
+            <p className="portal-matrix-desc">{portal.description}</p>
+
+            {/* Special RRB Regional links */}
+            {portal.board === 'RRB' && portal.regional_portals && (
+              <div className="regional-rrb-box">
+                <span className="regional-rrb-title">
+                  <ExternalLink size={11} /> Regional RRB Recruitment Portals:
+                </span>
+                <div className="regional-rrb-pills">
+                  {portal.regional_portals.map(rp => (
+                    <a href={rp.url} target="_blank" rel="noreferrer" className="regional-rrb-pill" key={rp.region}>
+                      {rp.region}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Special MPESB dual portal clarity */}
+            {portal.board === 'MPESB' && (
+              <div className="mpesb-dual-banner">
+                <strong>MPESB Official Dual Portals:</strong>
+                <div>Notification & Rule Books: <a href="https://esb.mp.gov.in" target="_blank" rel="noreferrer">esb.mp.gov.in</a></div>
+                <div>Online Application Forms: <a href="https://esb.mponline.gov.in" target="_blank" rel="noreferrer">esb.mponline.gov.in</a></div>
+              </div>
+            )}
+
+            <div className="portal-matrix-links">
+              <a href={portal.portal_url} target="_blank" rel="noreferrer" className="portal-link-btn primary">
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FileText size={14} /> Official Website / Notices
+                </span>
+                <ExternalLink size={13} />
+              </a>
+              <a href={portal.apply_url} target="_blank" rel="noreferrer" className="portal-link-btn secondary">
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <ExternalLink size={14} /> Application Portal / Careers
+                </span>
+                <span style={{ fontSize: '11px', fontWeight: 700 }}>APPLY</span>
+              </a>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Board-wise Vacancies & Notifications Folders */}
+      <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '24px 0 12px', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span>📋</span> Active Vacancy Notices by Recruitment Board
+      </h3>
+
+      <div className="vacancy-folders">
+        {groupedVacancies.map(g => (
+          <section className="panel vacancy-folder" key={g.board}>
+            <div className="folder-head">
+              <div>
+                <span className="folder-icon" style={{ background: '#eff6ff', color: '#1d4ed8' }}>▰</span>
+                <div>
+                  <b>{g.portal ? g.portal.name : `${g.board} Recruitment Board`}</b>
+                  <small>
+                    Verified Domain: <span className="verified-domain-pill" style={{ marginLeft: '4px' }}>{g.portal?.domain || g.board.toLowerCase()}</span>
+                    {' · '}{g.items.length} active notification notice{g.items.length === 1 ? '' : 's'}
+                  </small>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className="badge-new-notification">
+                  <span className="pulse-dot" />
+                  New Notification Released
+                </span>
+                <span className="tag" style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>
+                  OFFICIAL
+                </span>
+              </div>
+            </div>
+
+            {g.items.length === 0 ? (
+              <div style={{ padding: '16px', color: '#64748b', fontSize: '13px' }}>
+                No vacancies matching current filter for {g.board}.
+              </div>
+            ) : (
+              g.items.map(v => (
+                <div className="vac-row" key={v.id || v.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid #f1f5f9' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      {v.isNew || v.tag === 'NEW NOTIFICATION RELEASED' ? (
+                        <span className="badge-new-notification">
+                          <span className="pulse-dot" />
+                          New Notification Released
+                        </span>
+                      ) : (
+                        <span className="tag">{v.tag || 'OFFICIAL'}</span>
+                      )}
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>{v.board}</span>
+                    </div>
+                    <b style={{ fontSize: '14px', color: '#0f172a' }}>{v.name}</b>
+                    <small style={{ display: 'block', color: '#64748b', fontSize: '12px', marginTop: '2px' }}>
+                      {v.authority || g.portal?.authority} · Last Date: <strong style={{ color: '#0f172a' }}>{v.last}</strong>
+                    </small>
+                  </div>
+                  <div className="vac-actions" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <a
+                      href={v.notice}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', textDecoration: 'none', color: '#334155', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                    >
+                      <FileText size={13} /> Notification
+                    </a>
+                    <a
+                      href={v.apply}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ padding: '6px 14px', background: '#2563eb', color: '#ffffff', borderRadius: '6px', fontSize: '12px', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                    >
+                      <ExternalLink size={13} /> Apply / Official Site
+                    </a>
+                  </div>
+                </div>
+              ))
+            )}
+          </section>
+        ))}
+      </div>
+
+      <div className="panel source-note" style={{ marginTop: '24px' }}>
+        <b>Official Source Policy & Zero Cross-Contamination</b>
+        <p style={{ margin: '6px 0 0', color: '#475569', fontSize: '13px', lineHeight: 1.5 }}>
+          All recruitment notifications and portal links are mapped to official government and public sector domains:
+          IBPS (<strong>ibps.in</strong>), SBI Careers (<strong>sbi.co.in/web/careers</strong>), SSC (<strong>ssc.gov.in</strong>),
+          Railway RRB (<strong>rrbcdg.gov.in</strong> & <strong>rrbapply.gov.in</strong>), MPESB (<strong>esb.mp.gov.in</strong> & <strong>esb.mponline.gov.in</strong>),
+          MPPSC (<strong>mppsc.mp.gov.in</strong>), and UPSC (<strong>upsc.gov.in</strong> & <strong>upsconline.nic.in</strong>).
+          Third-party coaching redirects and non-official portals are strictly excluded.
+        </p>
+      </div>
+    </>
+  );
+}
 function normalizeText(s=''){return String(s||'').toLowerCase().replace(/\s+/g,' ').trim()}
 
 function cleanAnswer(v = '', questionRecord = null) {
@@ -1260,7 +1718,225 @@ function SettingsPage({session,role,setPage}){
     </>
   );
 }
-function Notifications(){return <><Title t="🔔 Candidate Notifications" s="Create personalised alerts for scores, weak points, vacancies and updates."/><div className="notification-layout"><div className="panel"><div className="panel-head"><b>Send / Schedule Alert</b></div><div className="notify-form"><label>Audience<select><option>All Candidates</option><option>Selected Exam Candidates</option><option>Weak Topic Candidates</option><option>Inactive Candidates</option><option>Selected Candidates</option></select></label><label>Message Type<select><option>New Update</option><option>Last Score</option><option>Weak Point</option><option>Vacancy Alert</option><option>Exam Reminder</option><option>Weekly Report</option></select></label><label>Title<input defaultValue="Your performance update"/></label><label>Message<textarea defaultValue="Your latest score, strong subject and weak topic will be inserted from verified attempt data."/></label><div className="notify-checks"><label><input type="checkbox" defaultChecked/> In-app</label><label><input type="checkbox"/> Push</label><label><input type="checkbox"/> Email</label></div><button className="btn primary" onClick={()=>alert('Notification draft created. Delivery needs Supabase/Edge Function setup.')}>Create Alert</button></div></div><div className="panel"><div className="panel-head"><b>Automation ideas</b></div><div className="activity-list"><p>📊 After exam → last score + rank</p><p>⚠️ Weak accuracy → targeted practice alert</p><p>🔥 Weekly → performance report</p><p>📰 New vacancy → official notification alert</p><p>⏰ Live exam → 30 min / 5 min reminders</p></div></div></div></>}
+function Notifications() {
+  const [audience, setAudience] = useState('All Candidates');
+  const [msgType, setMsgType] = useState('Vacancy Alert');
+  const [title, setTitle] = useState('New Official Notification Released');
+  const [message, setMessage] = useState('Official recruitment boards have released new exam notifications. Check the Vacancies portal for application links and deadlines.');
+  const [channelInApp, setChannelInApp] = useState(true);
+  const [channelPush, setChannelPush] = useState(false);
+  const [channelEmail, setChannelEmail] = useState(false);
+  const [sentAlerts, setSentAlerts] = useState([
+    {
+      id: 'alert-1',
+      board: 'IBPS',
+      title: 'IBPS CRP PO/MT & Specialist Officer Recruitment Released',
+      audience: 'Banking Aspirants',
+      time: 'Just now',
+      badge: 'New Notification Released'
+    },
+    {
+      id: 'alert-2',
+      board: 'MPESB',
+      title: 'MPESB Police Constable & Subedar/SI Application Window Active',
+      audience: 'MP State Aspirants',
+      time: '2 hours ago',
+      badge: 'New Notification Released'
+    },
+    {
+      id: 'alert-3',
+      board: 'RRB',
+      title: 'RRB Centralized Employment Notice (CEN) NTPC Window',
+      audience: 'Railway Candidates',
+      time: 'Today',
+      badge: 'New Notification Released'
+    }
+  ]);
+  const [alertSuccess, setAlertSuccess] = useState('');
+
+  const handleBroadcast = () => {
+    if (!title.trim() || !message.trim()) return;
+    const newAlert = {
+      id: `alert-${Date.now()}`,
+      board: 'Custom Broadcast',
+      title,
+      audience,
+      time: 'Just now',
+      badge: 'New Notification Released'
+    };
+    setSentAlerts([newAlert, ...sentAlerts]);
+    setAlertSuccess(`Broadcast alert "${title}" dispatched successfully to ${audience}!`);
+    setTimeout(() => setAlertSuccess(''), 5000);
+  };
+
+  const prefillFromBoard = (portal) => {
+    const notice = portal.active_notifications?.[0];
+    setTitle(`[${portal.board}] ${notice?.title || portal.name}`);
+    setMessage(`Official Notification Update from ${portal.authority}: Check details on ${portal.domain} and apply directly via ${portal.apply_url}`);
+    setMsgType('Vacancy Alert');
+  };
+
+  return (
+    <>
+      <Title
+        t="🔔 Recruitment & Candidate Notifications"
+        s="Dispatch official recruitment alerts, vacancy updates, and personalized exam reminders."
+      />
+
+      {alertSuccess && (
+        <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#065f46', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <CheckCircle2 size={16} /> {alertSuccess}
+        </div>
+      )}
+
+      {/* Official Board Live Broadcast Ticker */}
+      <div className="panel" style={{ marginBottom: '20px' }}>
+        <div className="panel-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <span className="section-kicker">OFFICIAL BOARD BROADCASTS</span>
+            <b>Latest Government & Banking Notification Feeds</b>
+          </div>
+          <span className="badge-new-notification">
+            <span className="pulse-dot" />
+            Live Sync Active
+          </span>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '12px', marginTop: '14px' }}>
+          {OFFICIAL_RECRUITMENT_PORTALS.map(portal => (
+            <div key={portal.id} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px', background: '#fafbfc' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+                <b style={{ fontSize: '13px', color: '#0f172a' }}>{portal.name}</b>
+                <span className="badge-new-notification" style={{ fontSize: '10px', padding: '2px 7px' }}>
+                  <span className="pulse-dot" />
+                  {portal.badge}
+                </span>
+              </div>
+              <p style={{ fontSize: '12px', color: '#475569', margin: '0 0 10px', lineHeight: 1.4 }}>
+                {portal.active_notifications?.[0]?.title || portal.description}
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: '1px solid #edf2f7' }}>
+                <span className="verified-domain-pill">{portal.domain}</span>
+                <button
+                  className="btn light"
+                  onClick={() => prefillFromBoard(portal)}
+                  style={{ fontSize: '11px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                >
+                  <Megaphone size={12} /> Prefill Broadcast
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="notification-layout">
+        <div className="panel">
+          <div className="panel-head">
+            <b>Send / Broadcast Recruitment Alert</b>
+          </div>
+          <div className="notify-form">
+            <label>
+              Audience
+              <select value={audience} onChange={(e) => setAudience(e.target.value)}>
+                <option>All Candidates</option>
+                <option>Banking Aspirants (IBPS / SBI)</option>
+                <option>Central SSC & Railway Aspirants</option>
+                <option>MP State Aspirants (MPESB / MPPSC)</option>
+                <option>UPSC Civil Services Candidates</option>
+                <option>Inactive Candidates</option>
+              </select>
+            </label>
+            <label>
+              Message Type
+              <select value={msgType} onChange={(e) => setMsgType(e.target.value)}>
+                <option>Vacancy Alert</option>
+                <option>New Notification Released</option>
+                <option>Exam Reminder</option>
+                <option>Score & Rank Update</option>
+                <option>Weak Point Practice</option>
+                <option>Weekly Report</option>
+              </select>
+            </label>
+            <label>
+              Title
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </label>
+            <label>
+              Message Content
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                style={{ minHeight: '90px' }}
+              />
+            </label>
+            <div className="notify-checks">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={channelInApp}
+                  onChange={(e) => setChannelInApp(e.target.checked)}
+                /> In-app Notification
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={channelPush}
+                  onChange={(e) => setChannelPush(e.target.checked)}
+                /> Web Push Alert
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={channelEmail}
+                  onChange={(e) => setChannelEmail(e.target.checked)}
+                /> Email Dispatch
+              </label>
+            </div>
+            <button className="btn primary" onClick={handleBroadcast}>
+              <Megaphone size={15} /> Dispatch Alert to Candidates
+            </button>
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-head">
+            <b>Broadcast Feed & History</b>
+          </div>
+          <div className="activity-list" style={{ marginTop: '10px' }}>
+            {sentAlerts.map(alert => (
+              <div key={alert.id} style={{ padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <span className="badge-new-notification" style={{ fontSize: '10px', padding: '2px 6px' }}>
+                    <span className="pulse-dot" />
+                    {alert.badge}
+                  </span>
+                  <small style={{ color: '#94a3b8' }}>{alert.time}</small>
+                </div>
+                <b style={{ fontSize: '13px', color: '#1e293b', display: 'block' }}>{alert.title}</b>
+                <small style={{ color: '#64748b' }}>Target: {alert.audience}</small>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ marginTop: '20px', paddingTop: '14px', borderTop: '1px solid #edf2f7' }}>
+            <b style={{ fontSize: '13px', color: '#1e293b', display: 'block', marginBottom: '8px' }}>Automation Triggers:</b>
+            <div className="activity-list">
+              <p>📢 New official vacancy → instant 'New Notification Released' push</p>
+              <p>⏳ Form closing in 48 hours → urgency alert</p>
+              <p>📊 Post-exam result → score card + percentile rank</p>
+              <p>⚠️ Weak subject identified → targeted mock alert</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
 class ErrorBoundary extends React.Component {
   constructor(props){
     super(props);

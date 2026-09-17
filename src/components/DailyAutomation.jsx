@@ -13,7 +13,11 @@ import {
   Info,
   Filter,
   Database,
-  Server
+  Server,
+  Trash2,
+  AlertOctagon,
+  X,
+  Check
 } from 'lucide-react';
 
 export default function DailyAutomation({ supabase, session }) {
@@ -63,6 +67,91 @@ export default function DailyAutomation({ supabase, session }) {
   const [msg, setMsg] = useState('');
   const [currentTimeKolkata, setCurrentTimeKolkata] = useState('');
 
+  // Permanent Data Deletion & Database Cleanup State
+  const [cleanupCounts, setCleanupCounts] = useState(null);
+  const [recentExams, setRecentExams] = useState([]);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [cleanupTarget, setCleanupTarget] = useState('mock_tests'); // 'mock_tests' | 'test_runs' | 'unwanted_questions' | 'logs' | 'all_questions'
+  const [cleanupScope, setCleanupScope] = useState('draft'); // 'draft' | 'single' | 'all' | 'older_than_30d' | 'older_than_7d'
+  const [selectedExamId, setSelectedExamId] = useState('');
+  const [cleanupConfirmOpen, setCleanupConfirmOpen] = useState(false);
+  const [cleanupTypedConfirm, setCleanupTypedConfirm] = useState('');
+  const [cleanupAckCheck, setCleanupAckCheck] = useState(false);
+  const [cleanupBusy, setCleanupBusy] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState(null);
+
+  const fetchCleanupCounts = async () => {
+    try {
+      setCleanupLoading(true);
+      const token = (await supabase?.auth?.getSession())?.data?.session?.access_token || '';
+      const res = await fetch('/api/admin-cleanup', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok) {
+          setCleanupCounts(data.counts);
+          if (Array.isArray(data.recent_exams)) {
+            setRecentExams(data.recent_exams);
+            if (data.recent_exams.length > 0 && !selectedExamId) {
+              setSelectedExamId(data.recent_exams[0].id);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch cleanup counts:', err);
+    } finally {
+      setCleanupLoading(false);
+    }
+  };
+
+  const handleExecuteCleanup = async () => {
+    setCleanupBusy(true);
+    setCleanupResult(null);
+    try {
+      const token = (await supabase?.auth?.getSession())?.data?.session?.access_token || '';
+      const payload = {
+        target: cleanupTarget,
+        scope: cleanupTarget === 'mock_tests' && cleanupScope === 'single' ? 'single' : cleanupScope,
+        exam_id: cleanupTarget === 'mock_tests' && cleanupScope === 'single' ? selectedExamId : null,
+        confirmed: true
+      };
+
+      const res = await fetch('/api/admin-cleanup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Cleanup execution failed');
+
+      setCleanupResult({
+        ok: true,
+        message: data.message || `Successfully executed cleanup on ${cleanupTarget}.`,
+        count: data.deleted_count
+      });
+
+      setCleanupConfirmOpen(false);
+      setCleanupTypedConfirm('');
+      setCleanupAckCheck(false);
+
+      await fetchCleanupCounts();
+      await loadData();
+    } catch (err) {
+      setCleanupResult({
+        ok: false,
+        message: err.message || 'Error occurred during permanent deletion'
+      });
+    } finally {
+      setCleanupBusy(false);
+    }
+  };
+
   // Clock for Asia/Kolkata
   useEffect(() => {
     const updateTime = () => {
@@ -84,6 +173,7 @@ export default function DailyAutomation({ supabase, session }) {
 
   const loadData = async () => {
     setLoading(true);
+    fetchCleanupCounts();
     try {
       let saved = null;
       // Fetch settings via API
@@ -601,6 +691,631 @@ export default function DailyAutomation({ supabase, session }) {
           </div>
         </div>
       </div>
+
+      {/* Permanent Data Deletion & Database Cleanup Section */}
+      <div className="panel" style={{ border: '1px solid #fed7aa', background: '#fff' }}>
+        <div className="panel-head" style={{ borderBottom: '1px solid #ffedd5' }}>
+          <div>
+            <b style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#9a3412' }}>
+              <Trash2 size={17} style={{ color: '#ea580c' }} />
+              Permanent Data Deletion & Database Cleanup
+            </b>
+            <small style={{ color: '#7c2d12' }}>
+              Safely select and permanently delete old/redundant mock tests, test runs, quarantined questions, or historical logs from Supabase.
+            </small>
+          </div>
+          <button
+            className="btn light"
+            onClick={fetchCleanupCounts}
+            disabled={cleanupLoading}
+            style={{ fontSize: '11px', padding: '6px 12px' }}
+          >
+            <RefreshCw size={13} className={cleanupLoading ? 'spin' : ''} />
+            {cleanupLoading ? 'Refreshing...' : 'Refresh Counts'}
+          </button>
+        </div>
+
+        {/* Database Inventory Metrics Bar */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: '12px',
+            marginTop: '16px',
+            marginBottom: '18px'
+          }}
+        >
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px' }}>
+            <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>Total Mock Tests</span>
+            <strong style={{ fontSize: '20px', color: '#0f172a' }}>
+              {cleanupCounts ? cleanupCounts.total_exams : '—'}
+            </strong>
+            <small style={{ display: 'block', fontSize: '10px', color: '#94a3b8', marginTop: '2px' }}>
+              {cleanupCounts ? `${cleanupCounts.draft_exams} draft / auto-generated` : ''}
+            </small>
+          </div>
+
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px' }}>
+            <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>Candidate Test Runs</span>
+            <strong style={{ fontSize: '20px', color: '#0f172a' }}>
+              {cleanupCounts ? cleanupCounts.total_attempts : '—'}
+            </strong>
+            <small style={{ display: 'block', fontSize: '10px', color: '#94a3b8', marginTop: '2px' }}>
+              Saved attempts in database
+            </small>
+          </div>
+
+          <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '10px', padding: '12px' }}>
+            <span style={{ fontSize: '11px', color: '#b45309', display: 'block' }}>Quarantined Questions</span>
+            <strong style={{ fontSize: '20px', color: '#92400e' }}>
+              {cleanupCounts ? cleanupCounts.quarantined_questions : '—'}
+            </strong>
+            <small style={{ display: 'block', fontSize: '10px', color: '#b45309', marginTop: '2px' }}>
+              Pending review / needs correction
+            </small>
+          </div>
+
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px' }}>
+            <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>Total Question Bank</span>
+            <strong style={{ fontSize: '20px', color: '#0f172a' }}>
+              {cleanupCounts ? cleanupCounts.total_questions : '—'}
+            </strong>
+            <small style={{ display: 'block', fontSize: '10px', color: '#94a3b8', marginTop: '2px' }}>
+              All subjects and imports
+            </small>
+          </div>
+
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px' }}>
+            <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>System & Auto Logs</span>
+            <strong style={{ fontSize: '20px', color: '#0f172a' }}>
+              {cleanupCounts ? (cleanupCounts.automation_logs + cleanupCounts.system_logs) : '—'}
+            </strong>
+            <small style={{ display: 'block', fontSize: '10px', color: '#94a3b8', marginTop: '2px' }}>
+              Historical audit records
+            </small>
+          </div>
+        </div>
+
+        {/* Target Dataset Selection */}
+        <div style={{ background: '#fffaf5', border: '1px solid #fed7aa', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+          <b style={{ fontSize: '13px', color: '#9a3412', display: 'block', marginBottom: '10px' }}>
+            Step 1: Select Target Dataset to Permanently Remove
+          </b>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {[
+              { id: 'mock_tests', label: 'Mock Tests', note: 'Redundant or draft tests' },
+              { id: 'test_runs', label: 'Test Runs', note: 'Candidate attempt records' },
+              { id: 'unwanted_questions', label: 'Quarantined Questions', note: 'Failed review / rejected' },
+              { id: 'logs', label: 'Historical Logs', note: 'Scheduler & system traces' },
+              { id: 'all_questions', label: 'Reset Question Bank', note: 'Complete bank purge' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  setCleanupTarget(tab.id);
+                  setCleanupResult(null);
+                  if (tab.id === 'mock_tests') setCleanupScope('draft');
+                  else if (tab.id === 'test_runs') setCleanupScope('older_than_30d');
+                  else if (tab.id === 'logs') setCleanupScope('older_than_30d');
+                  else setCleanupScope('all');
+                }}
+                style={{
+                  border: cleanupTarget === tab.id ? '2px solid #ea580c' : '1px solid #e2e8f0',
+                  background: cleanupTarget === tab.id ? '#fff' : '#f8fafc',
+                  color: cleanupTarget === tab.id ? '#9a3412' : '#475569',
+                  borderRadius: '10px',
+                  padding: '10px 14px',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  flex: '1 1 180px'
+                }}
+              >
+                <div style={{ fontWeight: '700', fontSize: '12px' }}>{tab.label}</div>
+                <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>{tab.note}</div>
+              </button>
+            ))}
+          </div>
+
+          {/* Step 2: Scope & Parameters */}
+          <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px dashed #fed7aa' }}>
+            <b style={{ fontSize: '13px', color: '#9a3412', display: 'block', marginBottom: '10px' }}>
+              Step 2: Configure Deletion Scope & Parameters
+            </b>
+
+            {/* Scope for Mock Tests */}
+            {cleanupTarget === 'mock_tests' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="mock_scope"
+                    checked={cleanupScope === 'draft'}
+                    onChange={() => setCleanupScope('draft')}
+                  />
+                  <span>
+                    <b>Draft & Auto-generated Mock Tests Only</b>
+                    <small style={{ display: 'block', color: '#64748b', fontSize: '11px' }}>
+                      Safely deletes unapproved or test mocks ({cleanupCounts?.draft_exams ?? 0} found) along with their question links and test runs. Published mock tests remain intact.
+                    </small>
+                  </span>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="mock_scope"
+                    checked={cleanupScope === 'single'}
+                    onChange={() => setCleanupScope('single')}
+                  />
+                  <span>
+                    <b>Delete a Specific Mock Test by Title / ID</b>
+                    <small style={{ display: 'block', color: '#64748b', fontSize: '11px' }}>
+                      Permanently delete one chosen test and its associated question mappings and candidate attempts.
+                    </small>
+                  </span>
+                </label>
+
+                {cleanupScope === 'single' && (
+                  <div style={{ marginLeft: '24px', marginTop: '4px' }}>
+                    <select
+                      value={selectedExamId}
+                      onChange={e => setSelectedExamId(e.target.value)}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid #d1d5db',
+                        background: '#fff',
+                        width: '100%',
+                        maxWidth: '560px',
+                        fontSize: '12px'
+                      }}
+                    >
+                      {recentExams.length === 0 ? (
+                        <option value="">No mock tests found in database</option>
+                      ) : (
+                        recentExams.map(ex => (
+                          <option key={ex.id} value={ex.id}>
+                            {ex.title} ({ex.exam_type || ex.subject || 'Exam'} - {ex.status} - {ex.total_questions || 0}Q) — ID: {ex.id.slice(0, 8)}...
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+                )}
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="mock_scope"
+                    checked={cleanupScope === 'all'}
+                    onChange={() => setCleanupScope('all')}
+                  />
+                  <span>
+                    <b style={{ color: '#dc2626' }}>All Mock Tests in Database (Full Reset)</b>
+                    <small style={{ display: 'block', color: '#64748b', fontSize: '11px' }}>
+                      Permanently wipes ALL {cleanupCounts?.total_exams ?? 0} mock tests and all candidate attempts.
+                    </small>
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {/* Scope for Test Runs */}
+            {cleanupTarget === 'test_runs' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="runs_scope"
+                    checked={cleanupScope === 'older_than_30d'}
+                    onChange={() => setCleanupScope('older_than_30d')}
+                  />
+                  <span>
+                    <b>Test Runs Older than 30 Days</b>
+                    <small style={{ display: 'block', color: '#64748b', fontSize: '11px' }}>
+                      Purges stale candidate exam attempt data older than one month to optimize query performance.
+                    </small>
+                  </span>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="runs_scope"
+                    checked={cleanupScope === 'all'}
+                    onChange={() => setCleanupScope('all')}
+                  />
+                  <span>
+                    <b style={{ color: '#dc2626' }}>All Test Runs / Candidate Attempts</b>
+                    <small style={{ display: 'block', color: '#64748b', fontSize: '11px' }}>
+                      Permanently wipes all {cleanupCounts?.total_attempts ?? 0} test attempt records.
+                    </small>
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {/* Scope for Quarantined Questions */}
+            {cleanupTarget === 'unwanted_questions' && (
+              <div style={{ background: '#fff', padding: '12px 14px', borderRadius: '8px', border: '1px solid #fed7aa' }}>
+                <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.5 }}>
+                  This operation targets all questions currently marked with status <b>'needs_correction'</b> or <b>'pending_review'</b> ({cleanupCounts?.quarantined_questions ?? 0} questions).
+                  These questions either failed integrity checks, contain incomplete options, or were flagged during automated AI review.
+                  Approved questions in the active exam pool will not be affected.
+                </p>
+              </div>
+            )}
+
+            {/* Scope for Historical Logs */}
+            {cleanupTarget === 'logs' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="logs_scope"
+                    checked={cleanupScope === 'older_than_7d'}
+                    onChange={() => setCleanupScope('older_than_7d')}
+                  />
+                  <span>
+                    <b>Logs Older than 7 Days</b>
+                    <small style={{ display: 'block', color: '#64748b', fontSize: '11px' }}>
+                      Keeps the past 7 days of audit records while cleaning older automation & system logs.
+                    </small>
+                  </span>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="logs_scope"
+                    checked={cleanupScope === 'older_than_30d'}
+                    onChange={() => setCleanupScope('older_than_30d')}
+                  />
+                  <span>
+                    <b>Logs Older than 30 Days</b>
+                    <small style={{ display: 'block', color: '#64748b', fontSize: '11px' }}>
+                      Standard archiving threshold: removes logs over a month old.
+                    </small>
+                  </span>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="logs_scope"
+                    checked={cleanupScope === 'all'}
+                    onChange={() => setCleanupScope('all')}
+                  />
+                  <span>
+                    <b style={{ color: '#dc2626' }}>Purge All Historical Logs</b>
+                    <small style={{ display: 'block', color: '#64748b', fontSize: '11px' }}>
+                      Clears all records from automation_logs and system_logs.
+                    </small>
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {/* Scope for All Questions */}
+            {cleanupTarget === 'all_questions' && (
+              <div style={{ background: '#fef2f2', padding: '12px 14px', borderRadius: '8px', border: '1px solid #fecaca' }}>
+                <b style={{ color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                  <AlertOctagon size={16} /> Danger: Full Question Bank Purge
+                </b>
+                <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#7f1d1d', lineHeight: 1.5 }}>
+                  This will permanently delete all {cleanupCounts?.total_questions ?? 0} questions, clear import batch history, and unbind all exam question links. Use this only when seeding a completely fresh question database.
+                </p>
+              </div>
+            )}
+
+            {/* Step 3: Trigger Action Button */}
+            <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setCleanupConfirmOpen(true);
+                  setCleanupTypedConfirm('');
+                  setCleanupAckCheck(false);
+                }}
+                style={{
+                  background: '#dc2626',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  fontWeight: '700',
+                  fontSize: '13px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                <Trash2 size={16} />
+                Permanently Delete Selected {cleanupTarget === 'mock_tests' ? 'Mock Tests' : cleanupTarget === 'test_runs' ? 'Test Runs' : cleanupTarget === 'unwanted_questions' ? 'Quarantined Questions' : cleanupTarget === 'logs' ? 'Logs' : 'Question Bank'}
+              </button>
+
+              <span style={{ fontSize: '12px', color: '#64748b' }}>
+                Requires confirmation before deleting from Supabase.
+              </span>
+            </div>
+
+            {/* Result Message Banner */}
+            {cleanupResult && (
+              <div
+                style={{
+                  marginTop: '14px',
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  background: cleanupResult.ok ? '#ecfdf5' : '#fef2f2',
+                  border: cleanupResult.ok ? '1px solid #a7f3d0' : '1px solid #fecaca',
+                  color: cleanupResult.ok ? '#065f46' : '#991b1b',
+                  fontSize: '12px',
+                  fontWeight: '600'
+                }}
+              >
+                {cleanupResult.ok ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+                <span>{cleanupResult.message}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Safety Confirmation Dialog Modal */}
+      {cleanupConfirmOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.7)',
+            backdropFilter: 'blur(3px)',
+            zIndex: 9999,
+            display: 'grid',
+            placeItems: 'center',
+            padding: '16px'
+          }}
+        >
+          <div
+            style={{
+              background: '#fff',
+              border: '1px solid #fca5a5',
+              borderRadius: '16px',
+              maxWidth: '520px',
+              width: '100%',
+              padding: '24px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              position: 'relative'
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setCleanupConfirmOpen(false)}
+              disabled={cleanupBusy}
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                background: 'transparent',
+                border: 0,
+                color: '#94a3b8',
+                cursor: 'pointer'
+              }}
+            >
+              <X size={20} />
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+              <div
+                style={{
+                  width: '42px',
+                  height: '42px',
+                  borderRadius: '12px',
+                  background: '#fee2e2',
+                  color: '#dc2626',
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0
+                }}
+              >
+                <AlertTriangle size={24} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '17px', color: '#111827', fontWeight: '700' }}>
+                  Confirm Permanent Data Deletion
+                </h3>
+                <span style={{ fontSize: '11px', color: '#dc2626', fontWeight: '600' }}>
+                  Supabase Database Operation
+                </span>
+              </div>
+            </div>
+
+            {/* Clear Confirmation Prompt */}
+            <div
+              style={{
+                background: '#fff1f2',
+                border: '1px solid #fecdd3',
+                borderRadius: '10px',
+                padding: '14px',
+                marginBottom: '16px'
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: '14px',
+                  fontWeight: '700',
+                  color: '#9f1239',
+                  lineHeight: 1.4
+                }}
+              >
+                Are you sure you want to permanently delete this data?
+              </p>
+              <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#881337', lineHeight: 1.4 }}>
+                This operation is <b>irreversible</b>. The selected records will be immediately and permanently removed from your Supabase PostgreSQL database. Associated junction mappings will also be safely unlinked.
+              </p>
+            </div>
+
+            {/* Summary of What Will Be Deleted */}
+            <div
+              style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                padding: '12px 14px',
+                fontSize: '12px',
+                marginBottom: '16px'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                <span style={{ color: '#64748b' }}>Target:</span>
+                <b style={{ color: '#1e293b' }}>
+                  {cleanupTarget === 'mock_tests'
+                    ? 'Mock Tests (exams)'
+                    : cleanupTarget === 'test_runs'
+                    ? 'Test Runs (exam_attempts)'
+                    : cleanupTarget === 'unwanted_questions'
+                    ? 'Quarantined Questions (questions)'
+                    : cleanupTarget === 'logs'
+                    ? 'Historical Logs'
+                    : 'Question Bank (Full Reset)'}
+                </b>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                <span style={{ color: '#64748b' }}>Scope:</span>
+                <b style={{ color: '#1e293b' }}>
+                  {cleanupScope === 'draft'
+                    ? 'Draft / Auto-generated Mocks'
+                    : cleanupScope === 'single'
+                    ? `Single Test (ID: ${selectedExamId.slice(0, 10)}...)`
+                    : cleanupScope === 'older_than_30d'
+                    ? 'Older than 30 Days'
+                    : cleanupScope === 'older_than_7d'
+                    ? 'Older than 7 Days'
+                    : 'All Matching Records'}
+                </b>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                <span style={{ color: '#64748b' }}>Estimated Impact:</span>
+                <b style={{ color: '#b91c1c' }}>
+                  {cleanupTarget === 'mock_tests'
+                    ? cleanupScope === 'draft'
+                      ? `${cleanupCounts?.draft_exams ?? 0} draft tests`
+                      : cleanupScope === 'single'
+                      ? '1 specific test'
+                      : `${cleanupCounts?.total_exams ?? 0} total tests`
+                    : cleanupTarget === 'test_runs'
+                    ? cleanupScope === 'older_than_30d'
+                      ? 'Attempts older than 30d'
+                      : `${cleanupCounts?.total_attempts ?? 0} total attempts`
+                    : cleanupTarget === 'unwanted_questions'
+                    ? `${cleanupCounts?.quarantined_questions ?? 0} quarantined questions`
+                    : cleanupTarget === 'logs'
+                    ? 'Historical log entries'
+                    : `${cleanupCounts?.total_questions ?? 0} questions & batches`}
+                </b>
+              </div>
+            </div>
+
+            {/* Safety Verification Inputs */}
+            {(cleanupTarget === 'all_questions' || (cleanupTarget === 'mock_tests' && cleanupScope === 'all')) ? (
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#b91c1c', marginBottom: '6px' }}>
+                  Type "DELETE" to confirm complete database purge:
+                </label>
+                <input
+                  type="text"
+                  value={cleanupTypedConfirm}
+                  onChange={e => setCleanupTypedConfirm(e.target.value)}
+                  placeholder="Type DELETE in capital letters"
+                  disabled={cleanupBusy}
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #ef4444',
+                    background: '#fff',
+                    fontSize: '13px'
+                  }}
+                />
+              </div>
+            ) : (
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#334155', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={cleanupAckCheck}
+                    onChange={e => setCleanupAckCheck(e.target.checked)}
+                    disabled={cleanupBusy}
+                  />
+                  <span>I understand that this data will be permanently wiped and cannot be restored.</span>
+                </label>
+              </div>
+            )}
+
+            {/* Modal Action Buttons */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+              <button
+                type="button"
+                className="btn light"
+                onClick={() => setCleanupConfirmOpen(false)}
+                disabled={cleanupBusy}
+                style={{ padding: '8px 16px', fontSize: '13px' }}
+              >
+                Cancel & Keep Data
+              </button>
+
+              <button
+                type="button"
+                className="btn"
+                onClick={handleExecuteCleanup}
+                disabled={
+                  cleanupBusy ||
+                  ((cleanupTarget === 'all_questions' || (cleanupTarget === 'mock_tests' && cleanupScope === 'all'))
+                    ? cleanupTypedConfirm !== 'DELETE'
+                    : !cleanupAckCheck)
+                }
+                style={{
+                  background: '#dc2626',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '8px 18px',
+                  borderRadius: '10px',
+                  fontWeight: '700',
+                  fontSize: '13px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  opacity:
+                    cleanupBusy ||
+                    ((cleanupTarget === 'all_questions' || (cleanupTarget === 'mock_tests' && cleanupScope === 'all'))
+                      ? cleanupTypedConfirm !== 'DELETE'
+                      : !cleanupAckCheck)
+                      ? 0.5
+                      : 1,
+                  cursor:
+                    cleanupBusy ||
+                    ((cleanupTarget === 'all_questions' || (cleanupTarget === 'mock_tests' && cleanupScope === 'all'))
+                      ? cleanupTypedConfirm !== 'DELETE'
+                      : !cleanupAckCheck)
+                      ? 'not-allowed'
+                      : 'pointer'
+                }}
+              >
+                <Trash2 size={15} />
+                {cleanupBusy ? 'Permanently Deleting...' : 'Yes, Permanently Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Execution & System Logs */}
       <div className="panel">

@@ -66,6 +66,226 @@ export const OFFICIAL_SOURCES = [
   }
 ];
 
+export const OFFICIAL_RECRUITMENT_PORTALS = [
+  {
+    id: 'ibps',
+    name: 'IBPS (Institute of Banking Personnel Selection)',
+    board: 'IBPS',
+    category: 'Banking & Financial Sector',
+    portal_url: 'https://www.ibps.in',
+    apply_url: 'https://www.ibps.in',
+    domain: 'ibps.in',
+    authority: 'Institute of Banking Personnel Selection',
+    feed_url: 'https://www.ibps.in',
+    badge: 'New Notification Released',
+    is_new: true,
+    last_updated: 'Live',
+    description: 'Official centralized recruitment portal for PO/MT, Clerk, Specialist Officers (SO), and Regional Rural Banks (RRB CRP).',
+    active_notifications: [
+      {
+        title: 'IBPS CRP PO/MT & Specialist Officer Recruitment Notifications',
+        date: 'Active',
+        status: 'New Notification Released',
+        url: 'https://www.ibps.in'
+      },
+      {
+        title: 'IBPS RRB Officer Scale I, II, III & Office Assistants',
+        date: 'Active',
+        status: 'Application & Admit Card Live',
+        url: 'https://www.ibps.in'
+      }
+    ]
+  },
+  {
+    id: 'sbi',
+    name: 'SBI Careers (State Bank of India)',
+    board: 'SBI',
+    category: 'Banking & Financial Sector',
+    portal_url: 'https://sbi.co.in/web/careers',
+    apply_url: 'https://sbi.co.in/web/careers',
+    domain: 'sbi.co.in',
+    authority: 'State Bank of India Central Recruitment & Promotion Department',
+    feed_url: 'https://sbi.co.in/web/careers',
+    badge: 'New Notification Released',
+    is_new: true,
+    last_updated: 'Live',
+    description: 'Official recruitment portal for SBI Probationary Officers (PO), Junior Associates (Customer Support & Sales), and Specialist Cadre Officers (SCO).',
+    active_notifications: [
+      {
+        title: 'SBI Junior Associates (Clerical Cadre) Recruitment Notification',
+        date: 'Active',
+        status: 'New Notification Released',
+        url: 'https://sbi.co.in/web/careers'
+      },
+      {
+        title: 'SBI Probationary Officers (PO) & Specialist Cadre Officers Drive',
+        date: 'Active',
+        status: 'Notice / Apply Portal Live',
+        url: 'https://sbi.co.in/web/careers'
+      }
+    ]
+  },
+  {
+    id: 'ssc',
+    name: 'SSC (Staff Selection Commission)',
+    board: 'SSC',
+    category: 'Central Government Staff Selection',
+    portal_url: 'https://ssc.gov.in',
+    apply_url: 'https://ssc.gov.in',
+    domain: 'ssc.gov.in',
+    authority: 'Staff Selection Commission, Government of India',
+    feed_url: 'https://ssc.gov.in',
+    badge: 'New Notification Released',
+    is_new: true,
+    last_updated: 'Live',
+    description: 'New official portal for Combined Graduate Level (CGL), CHSL (10+2), Multi-Tasking Staff (MTS), Delhi Police / CAPF SI, and GD Constable.',
+    active_notifications: [
+      {
+        title: 'SSC Combined Graduate Level (CGL) Examination Notification',
+        date: 'Active',
+        status: 'New Notification Released',
+        url: 'https://ssc.gov.in'
+      },
+      {
+        title: 'SSC Combined Higher Secondary Level (CHSL) & GD Constable Portal',
+        date: 'Active',
+        status: 'OTR & Apply Portal Live',
+        url: 'https://ssc.gov.in'
+      }
+    ]
+  },
+  {
+    id: 'rrb',
+    name: 'Railway Recruitment Boards (RRB)',
+    board: 'RRB',
+    category: 'Indian Railways',
+    portal_url: 'https://www.rrbcdg.gov.in',
+    apply_url: 'https://www.rrbapply.gov.in',
+    domain: 'rrbcdg.gov.in',
+    authority: 'Railway Recruitment Control Board (RRCB), Ministry of Railways',
+    feed_url: 'https://www.rrbcdg.gov.in',
+    badge: 'New Notification Released',
+    is_new: true,
+    last_updated: 'Live',
+    description: 'Official regional railway recruitment portals & Centralized Online Application Portal (rrbapply.gov.in) for NTPC, ALP, Technicians, JE, and Group D.',
+    regional_portals: [
+      { region: 'RRB Chandigarh (Nodal)', url: 'https://www.rrbcdg.gov.in' },
+      { region: 'RRB Bhopal (West Central / Western)', url: 'https://rrbbhopal.gov.in' },
+      { region: 'RRB Prayagraj / Allahabad', url: 'https://rrbald.gov.in' },
+      { region: 'RRB Mumbai', url: 'https://rrbmumbai.gov.in' },
+      { region: 'Central Online Application Portal', url: 'https://www.rrbapply.gov.in' }
+    ],
+    active_notifications: [
+      {
+        title: 'RRB Centralized Employment Notice (CEN) - NTPC (Graduate & Under Graduate)',
+        date: 'Active',
+        status: 'New Notification Released',
+        url: 'https://www.rrbapply.gov.in'
+      },
+      {
+        title: 'RRB Assistant Loco Pilot (ALP) & Technicians Recruitment Window',
+        date: 'Active',
+        status: 'Application & CBT Stage Active',
+        url: 'https://www.rrbcdg.gov.in'
+      }
+    ]
+  },
+  {
+    id: 'mpesb',
+    name: 'MPESB / MPPEB (Madhya Pradesh Employees Selection Board)',
+    board: 'MPESB',
+    category: 'Madhya Pradesh State Exams',
+    portal_url: 'https://esb.mp.gov.in',
+    apply_url: 'https://esb.mponline.gov.in',
+    domain: 'esb.mp.gov.in',
+    authority: 'Madhya Pradesh Employees Selection Board (formerly MPPEB / Vyapam), Bhopal',
+    feed_url: 'https://esb.mp.gov.in',
+    badge: 'New Notification Released',
+    is_new: true,
+    last_updated: 'Live',
+    description: 'Main official portal (esb.mp.gov.in) and official MPOnline application window (esb.mponline.gov.in) for Police Constable, Subedar/SI, Group-3 Sub Engineer, Patwari, and Teacher Eligibility.',
+    active_notifications: [
+      {
+        title: 'MPESB Police Constable (GD / Radio) Recruitment Examination',
+        date: 'Active',
+        status: 'New Notification Released',
+        url: 'https://esb.mponline.gov.in'
+      },
+      {
+        title: 'MPESB Group-3 Sub Engineer, Draftsman & Other Equivalent Posts',
+        date: 'Active',
+        status: 'Rule Book Live / Apply Online',
+        url: 'https://esb.mp.gov.in/rulebooks/rule_books.htm'
+      },
+      {
+        title: 'MPESB Subedar & Sub-Inspector (Police Headquarter) Recruitment',
+        date: 'Active',
+        status: 'New Notification Released',
+        url: 'https://esb.mponline.gov.in'
+      }
+    ]
+  },
+  {
+    id: 'mppsc',
+    name: 'MPPSC (Madhya Pradesh Public Service Commission)',
+    board: 'MPPSC',
+    category: 'Madhya Pradesh State Civil Services',
+    portal_url: 'https://mppsc.mp.gov.in',
+    apply_url: 'https://mppsc.mp.gov.in',
+    domain: 'mppsc.mp.gov.in',
+    authority: 'Madhya Pradesh Public Service Commission, Residency Area, Indore',
+    feed_url: 'https://mppsc.mp.gov.in/rss',
+    badge: 'New Notification Released',
+    is_new: true,
+    last_updated: 'Live',
+    description: 'Official portal for State Service Examination (SSE), State Forest Service (SFS), Assistant Professor, Medical Officer, and Mining Inspector.',
+    active_notifications: [
+      {
+        title: 'MPPSC State Service Examination (SSE Prelims / Mains)',
+        date: 'Active',
+        status: 'New Notification Released',
+        url: 'https://mppsc.mp.gov.in'
+      },
+      {
+        title: 'MPPSC State Forest Service & Engineering Service Examination',
+        date: 'Active',
+        status: 'Official Advertisement Live',
+        url: 'https://mppsc.mp.gov.in'
+      }
+    ]
+  },
+  {
+    id: 'upsc',
+    name: 'UPSC (Union Public Service Commission)',
+    board: 'UPSC',
+    category: 'All India & Central Civil Services',
+    portal_url: 'https://upsc.gov.in',
+    apply_url: 'https://upsconline.nic.in',
+    domain: 'upsc.gov.in',
+    authority: 'Union Public Service Commission, Dholpur House, New Delhi',
+    feed_url: 'https://upsc.gov.in',
+    badge: 'New Notification Released',
+    is_new: true,
+    last_updated: 'Live',
+    description: 'Official portal for Civil Services Examination (CSE), Engineering Services (ESE), Combined Defence Services (CDS), NDA/NA, and Central Armed Police Forces (CAPF).',
+    active_notifications: [
+      {
+        title: 'UPSC Civil Services (Preliminary / Main) Examination',
+        date: 'Active',
+        status: 'New Notification Released',
+        url: 'https://upsconline.nic.in'
+      },
+      {
+        title: 'UPSC Combined Defence Services (CDS) & NDA Online Application',
+        date: 'Active',
+        status: 'OTR & Apply Portal Live',
+        url: 'https://upsconline.nic.in'
+      }
+    ]
+  }
+];
+
+
 export function getSupabaseAdmin(req = null) {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
   const secretKey = process.env.SUPABASE_SECRET_KEY || '';

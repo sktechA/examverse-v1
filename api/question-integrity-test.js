@@ -630,12 +630,27 @@ export default async function handler(req, res) {
     }
   }
 
-  const results = await runIntegrityTestSuite();
-  results.ok = results.failed === 0;
-  if (res) {
-    return res.status(results.failed === 0 ? 200 : 500).json(results);
+  try {
+    const results = await runIntegrityTestSuite();
+    results.ok = results.failed === 0;
+    if (res) {
+      return res.status(results.failed === 0 ? 200 : 500).json(results);
+    }
+    return results;
+  } catch (err) {
+    console.error('[INTEGRITY] Test execution error:', err);
+    if (res) {
+      return res.status(500).json({
+        ok: false,
+        error: err.message || 'Internal error while running test suite',
+        total: 16,
+        passed: 0,
+        failed: 16,
+        tests: []
+      });
+    }
+    throw err;
   }
-  return results;
 }
 
 // Auto-run if invoked directly via CLI

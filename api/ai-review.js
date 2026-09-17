@@ -3,7 +3,9 @@ import {
   getGeminiClient,
   normalizeText,
   validateQuestionDeterministic,
-  verifyAdminAuth
+  verifyAdminAuth,
+  cleanJsonParse,
+  handleCorsAndOptions
 } from './_shared.js';
 
 async function writeLog(sb, level, source, action, message, details = {}, user_id = null) {
@@ -62,11 +64,15 @@ Return JSON only in format:
     )
   ]);
 
-  const parsed = JSON.parse(response.text || '{}');
+  const parsed = cleanJsonParse(response.text || '{}');
   return Array.isArray(parsed.reviews) ? parsed.reviews : [];
 }
 
 export default async function handler(req, res) {
+  if (handleCorsAndOptions(req, res, ['POST', 'OPTIONS'])) {
+    return;
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'POST required' });
   }

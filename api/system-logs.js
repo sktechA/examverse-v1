@@ -1,6 +1,10 @@
-import { getSupabaseAdmin, verifyAdminAuth } from './_shared.js';
+import { getSupabaseAdmin, verifyAdminAuth, handleCorsAndOptions, getQueryParams } from './_shared.js';
 
 export default async function handler(req, res) {
+  if (handleCorsAndOptions(req, res, ['GET', 'OPTIONS'])) {
+    return;
+  }
+
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -17,9 +21,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    const limit = Math.min(Math.max(Number(req.query?.limit) || 50, 1), 200);
-    const level = req.query?.level || 'all';
-    const source = req.query?.source || 'all';
+    const query = getQueryParams(req);
+    const limit = Math.min(Math.max(Number(query?.limit) || 50, 1), 200);
+    const level = query?.level || 'all';
+    const source = query?.source || 'all';
 
     // 1. Fetch system_logs
     let systemLogsQuery = sb

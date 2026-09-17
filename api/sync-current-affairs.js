@@ -5,7 +5,10 @@ import {
   OFFICIAL_RECRUITMENT_PORTALS,
   getKolkataDateString,
   validateQuestionDeterministic,
-  verifyAdminAuth
+  verifyAdminAuth,
+  cleanJsonParse,
+  handleCorsAndOptions,
+  resolveOptionDuplicatesAndDistribute
 } from './_shared.js';
 import crypto from 'node:crypto';
 
@@ -130,6 +133,10 @@ async function fetchRealOfficialBulletins(sources = OFFICIAL_SOURCES) {
 }
 
 export default async function handler(req, res) {
+  if (handleCorsAndOptions(req, res, ['GET', 'POST', 'OPTIONS'])) {
+    return;
+  }
+
   if (req.method !== 'POST' && req.method !== 'GET') {
     return res.status(405).json({ error: 'GET or POST required' });
   }
@@ -226,7 +233,8 @@ RULES:
             config: { responseMimeType: 'application/json' }
           });
 
-          const parsed = JSON.parse(response.text || '{}');
+          const rawParsed = cleanJsonParse(response.text || '{}');
+          const parsed = resolveOptionDuplicatesAndDistribute(rawParsed);
           if (parsed.question && parsed.option_a && parsed.correct_answer) {
             const val = validateQuestionDeterministic(parsed, { requireSource: true });
             if (val.valid) {

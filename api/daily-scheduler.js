@@ -8,7 +8,11 @@ import {
   validateQuestionDeterministic,
   isSubjectStrictMatch,
   normalizeText,
-  verifyAdminAuth
+  verifyAdminAuth,
+  cleanJsonParse,
+  handleCorsAndOptions,
+  resolveOptionDuplicatesAndDistribute,
+  fixDuplicateOptions
 } from './_shared.js';
 import syncCurrentAffairsHandler from './sync-current-affairs.js';
 import mockGeneratorHandler from './mock-generator.js';
@@ -176,7 +180,7 @@ Return JSON in this EXACT schema:
     }
   );
 
-  const parsed = JSON.parse(response.text || '{}');
+  const parsed = cleanJsonParse(response.text || '{}');
   return Array.isArray(parsed.questions) ? parsed.questions : [];
 }
 
@@ -250,11 +254,14 @@ Return JSON in this EXACT structure:
     }
   );
 
-  const parsed = JSON.parse(response.text || '{}');
+  const parsed = cleanJsonParse(response.text || '{}');
   return Array.isArray(parsed.reviews) ? parsed.reviews : [];
 }
 
 export default async function handler(req, res) {
+  if (handleCorsAndOptions(req, res, ['GET', 'POST', 'OPTIONS'])) {
+    return;
+  }
   const isInternalCall = typeof req === 'string' || req?.isInternal;
   const todayStr = getKolkataDateString();
   const timeStr = getKolkataTimeString();
@@ -482,8 +489,11 @@ export default async function handler(req, res) {
         const batchNeeded = Math.min(10, remainingTarget - candidateQuestions.length);
         try {
           const generatedList = await generateGeminiQuestionsForSubject(gemini, targetSubject, batchNeeded, retryOptions);
-          for (const gq of generatedList) {
+          for (const rawGq of generatedList) {
             if (candidateQuestions.length >= remainingTarget) break;
+
+            // Automatically resolve duplicate options/distractor collisions and distribute correct answers
+            const gq = resolveOptionDuplicatesAndDistribute(rawGq);
 
             const qRecord = {
               question: gq.question,
@@ -550,8 +560,12 @@ export default async function handler(req, res) {
           }
         } catch (genErr) {
           console.warn(`[Scheduler Gemini Gen Warning] ${targetSubject}:`, genErr.message);
-          // Do not retry indefinitely on failure; proceed safely
-          break;
+          if (genErr?.isQuotaExhausted) {
+            console.warn(`[Scheduler Gemini Quota Limit] Quota exhausted, halting active generation rounds gracefully.`);
+            break;
+          }
+          // Do not fail silently or freeze; continue to next rotating subject up to MAX_GEN_ROUNDS
+          continue;
         }
       }
     }

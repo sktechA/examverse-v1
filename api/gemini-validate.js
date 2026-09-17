@@ -3,10 +3,16 @@ import {
   getGeminiClient,
   normalizeText,
   validateQuestionDeterministic,
-  verifyAdminAuth
+  verifyAdminAuth,
+  cleanJsonParse,
+  handleCorsAndOptions
 } from './_shared.js';
 
 export default async function handler(req, res) {
+  if (handleCorsAndOptions(req, res, ['POST', 'OPTIONS'])) {
+    return;
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'POST required' });
   }
@@ -153,7 +159,7 @@ Return JSON:
           ]);
 
           const rawText = response.text || '{}';
-          const parsed = JSON.parse(rawText);
+          const parsed = cleanJsonParse(rawText);
           const reviews = Array.isArray(parsed.reviews) ? parsed.reviews : [];
 
           for (const item of pendingForAi) {

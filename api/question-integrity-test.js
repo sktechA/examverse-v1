@@ -4,7 +4,11 @@ import {
   validateQuestionDeterministic,
   normalizeText,
   isSubjectStrictMatch,
-  verifyAdminAuth
+  verifyAdminAuth,
+  handleCorsAndOptions,
+  fixDuplicateOptions,
+  distributeQuestionOptions,
+  resolveOptionDuplicatesAndDistribute
 } from './_shared.js';
 import dailySchedulerHandler, {
   generateGeminiQuestionsForSubject,
@@ -611,6 +615,69 @@ export async function runIntegrityTestSuite() {
     record('16. Gemini API 503 Exponential Backoff Retry & Timeout Promise', false, err.message);
   }
 
+  // 17. Unique Option Validation & Distractor Fix (No Duplicates Allowed)
+  // Invariant: If generated distractors duplicate an existing option (other than the correct answer),
+  // the parser automatically re-maps or replaces it with a unique valid value (e.g. Option B is 1, duplicate C is replaced with 6).
+  // Also verifies uniform correct answer distribution across A, B, C, D without option bias.
+  try {
+    const rawDuplicateQ = {
+      id: 'distractor-dedup-01',
+      question: 'Find the simple interest on Rs. 1000 at 5% per annum for 1 year.',
+      option_a: 'Rs. 50',
+      option_b: 'Rs. 10',
+      option_c: 'Rs. 10', // Duplicate of Option B!
+      option_d: 'Rs. 10', // Duplicate of Option B!
+      correct_answer: 'A',
+      explanation: 'SI = (1000 * 5 * 1) / 100 = Rs. 50.',
+      subject: 'Mathematics',
+      topic: 'Simple Interest'
+    };
+
+    // 1. Check deduplication & distractor fix
+    const fixedQ = fixDuplicateOptions(rawDuplicateQ);
+    const fixedOpts = [fixedQ.option_a, fixedQ.option_b, fixedQ.option_c, fixedQ.option_d];
+    const allUnique = new Set(fixedOpts.map(normalizeText)).size === 4;
+    const answerIntact = fixedQ.correct_answer === 'A' && fixedQ.option_a === 'Rs. 50';
+
+    // 2. Check user's specific case: if Option B is 1 and duplicate appears (e.g. C is 1), C changes to a distinct value
+    const userExampleQ = {
+      question: 'What is 0 + 1?',
+      option_a: '0',
+      option_b: '1',
+      option_c: '1', // Duplicate of B
+      option_d: '4',
+      correct_answer: 'B'
+    };
+    const fixedUserExample = fixDuplicateOptions(userExampleQ);
+    const userExampleOpts = [fixedUserExample.option_a, fixedUserExample.option_b, fixedUserExample.option_c, fixedUserExample.option_d];
+    const userExampleUnique = new Set(userExampleOpts.map(normalizeText)).size === 4;
+    const userExampleAnsIntact = fixedUserExample.correct_answer === 'B' && fixedUserExample.option_b === '1';
+
+    // 3. Check correct answer distribution (prevents bias on Option A)
+    const counts = { A: 0, B: 0, C: 0, D: 0 };
+    for (let i = 0; i < 200; i++) {
+      const distributed = distributeQuestionOptions(fixedQ);
+      counts[distributed.correct_answer]++;
+      // Verify correct option content followed the letter
+      const declaredAns = distributed.correct_answer;
+      if (distributed[`option_${declaredAns.toLowerCase()}`] !== 'Rs. 50') {
+        throw new Error('Option text dissociated from correct answer during distribution!');
+      }
+    }
+    const allLettersRepresented = ['A', 'B', 'C', 'D'].every(l => counts[l] >= 15);
+
+    const ok = allUnique && answerIntact && userExampleUnique && userExampleAnsIntact && allLettersRepresented;
+    record(
+      '17. Unique Option Validation & Distractor Fix (No Duplicates & Unbiased Distribution)',
+      ok,
+      ok
+        ? `Successfully re-mapped duplicate distractors into 4 distinct options and confirmed unbiased answer distribution across A/B/C/D`
+        : `Deduplication or distribution failed: unique=${allUnique}, intact=${answerIntact}, userEx=${userExampleUnique}, distribution=${JSON.stringify(counts)}`
+    );
+  } catch (err) {
+    record('17. Unique Option Validation & Distractor Fix', false, err.message);
+  }
+
   report.total = report.tests.length;
   report.ok = report.failed === 0;
   report.summary = `All ${report.passed}/${report.total} question integrity invariants verified successfully (Zero cross-contamination detected).`;
@@ -619,6 +686,9 @@ export async function runIntegrityTestSuite() {
 }
 
 export default async function handler(req, res) {
+  if (handleCorsAndOptions(req, res, ['GET', 'POST', 'OPTIONS'])) {
+    return;
+  }
   console.info('[INTEGRITY] Test request started');
   const sb = getSupabaseAdmin(req);
   console.info('[INTEGRITY] DB client:', sb ? 'CREATED' : 'FAILED');

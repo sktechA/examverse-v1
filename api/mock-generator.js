@@ -3,7 +3,12 @@ import {
   isSubjectStrictMatch,
   isDependentContextMissing,
   verifyAdminAuth,
-  handleCorsAndOptions
+  handleCorsAndOptions,
+  sanitizeObject,
+  sanitizeString,
+  sanitizeErrorResponse,
+  checkRateLimit,
+  getClientIp
 } from './_shared.js';
 
 export const BLUEPRINT_PRESETS = {
@@ -72,27 +77,37 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'POST required' });
+    return res.status(405).json({ ok: false, error: 'POST required' });
+  }
+
+  // 1. Autonomous Rate Limiting (Prevents computational & DB exhaustion)
+  const ip = getClientIp(req);
+  const rate = checkRateLimit(ip, 'mock-generator', 20, 60000);
+  if (!rate.allowed) {
+    if (res && typeof res.setHeader === 'function') {
+      res.setHeader('Retry-After', String(rate.retryAfter));
+    }
+    return res.status(429).json({ ok: false, error: 'Too many requests. Please wait before generating more mock exams.' });
   }
 
   const sb = getSupabaseAdmin(req);
   if (!sb) {
-    return res.status(500).json({ error: 'Database server configuration unavailable' });
+    return res.status(500).json({ ok: false, error: 'Database server configuration unavailable' });
   }
 
-  // Authorization Check
+  // 2. Authorization Check
   const auth = await verifyAdminAuth(req, sb);
   if (!auth.ok) {
-    return res.status(auth.statusCode || 401).json({ error: auth.error });
+    return res.status(auth.statusCode || 401).json({ ok: false, error: auth.error });
   }
 
   try {
-    const {
-      examTitle = 'IBPS RRB PO',
-      action = 'preview', // 'preview' or 'publish'
-      mockCount = 1,
-      blueprint = null
-    } = req.body || {};
+    const body = sanitizeObject(req.body || {});
+    const examTitle = sanitizeString(body.examTitle || 'IBPS RRB PO', 100);
+    const action = body.action === 'publish' ? 'publish' : 'preview';
+    const rawMockCount = Number(body.mockCount || 1);
+    const mockCount = Math.min(Math.max(rawMockCount, 1), 10);
+    const blueprint = body.blueprint || null;
 
     const selectedBlueprint = blueprint || BLUEPRINT_PRESETS[examTitle] || {
       title: `${examTitle} Practice Mock`,
@@ -252,7 +267,7 @@ export default async function handler(req, res) {
   } catch (err) {
     return res.status(500).json({
       ok: false,
-      error: err.message || 'Mock generation failed'
+      error: sanitizeErrorResponse(err, 'Mock generation failed')
     });
   }
 }

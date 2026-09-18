@@ -878,7 +878,45 @@ function isDependentContextMissing(questionText) {
   }
   return false;
 }
-function parseDelimitedCSV(text){const rows=[];let row=[],cell='',quote=false;for(let i=0;i<text.length;i++){const c=text[i];if(c==='"'){if(quote&&text[i+1]==='"'){cell+='"';i++;}else quote=!quote;}else if(c===','&&!quote){row.push(cell);cell='';}else if((c==='\n'||c==='\r')&&!quote){if(c==='\r'&&text[i+1]==='\n')i++;row.push(cell);cell='';if(row.some(x=>String(x).trim()!==''))rows.push(row);row=[];}else cell+=c;}row.push(cell);if(row.some(x=>String(x).trim()!==''))rows.push(row);return rows}
+function parseDelimitedCSV(text) {
+  if (!text || typeof text !== 'string') return [];
+  const clean = text.replace(/^\uFEFF/, '');
+  const firstLine = clean.split(/\r?\n/)[0] || '';
+  let delimiter = ',';
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const semiCount = (firstLine.match(/;/g) || []).length;
+  const tabCount = (firstLine.match(/\t/g) || []).length;
+  if (semiCount > commaCount && semiCount >= tabCount) delimiter = ';';
+  else if (tabCount > commaCount && tabCount > semiCount) delimiter = '\t';
+
+  const rows = [];
+  let row = [], cell = '', quote = false;
+  for (let i = 0; i < clean.length; i++) {
+    const c = clean[i];
+    if (c === '"') {
+      if (quote && clean[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else {
+        quote = !quote;
+      }
+    } else if (c === delimiter && !quote) {
+      row.push(cell);
+      cell = '';
+    } else if ((c === '\n' || c === '\r') && !quote) {
+      if (c === '\r' && clean[i + 1] === '\n') i++;
+      row.push(cell);
+      cell = '';
+      if (row.some(x => String(x).trim() !== '')) rows.push(row);
+      row = [];
+    } else {
+      cell += c;
+    }
+  }
+  row.push(cell);
+  if (row.some(x => String(x).trim() !== '')) rows.push(row);
+  return rows;
+}
 function resolveBilingual(primary, secondary) {
   let p = cleanDisplayText(primary);
   let s = cleanDisplayText(secondary);
@@ -901,22 +939,22 @@ function resolveBilingual(primary, secondary) {
 function parseCsvRows(text,sourceName){
   const matrix=parseDelimitedCSV(text);
   if(!matrix.length)return[];
-  const headers=matrix[0].map(x=>String(x).trim().toLowerCase().replace(/\s+/g,'_'));
+  const headers=matrix[0].map(x=>String(x).trim().toLowerCase().replace(/[\s\-_]+/g,'_'));
   const find=(names)=>{for(const n of names){const i=headers.indexOf(n);if(i>=0)return i}return -1};
   const ix={
-    question:find(['question','question_text','ques']),
-    question_hi:find(['question_hi','hindi_question','question_hindi','hindi_ques','ques_hi','hindi']),
-    a:find(['option_a','a','optiona']),
-    b:find(['option_b','b','optionb']),
-    c:find(['option_c','c','optionc']),
-    d:find(['option_d','d','optiond']),
-    a_hi:find(['option_a_hi','a_hi','optiona_hi','hindi_option_a']),
-    b_hi:find(['option_b_hi','b_hi','optionb_hi','hindi_option_b']),
-    c_hi:find(['option_c_hi','c_hi','optionc_hi','hindi_option_c']),
-    d_hi:find(['option_d_hi','d_hi','optiond_hi','hindi_option_d']),
-    answer:find(['correct_answer','answer','correct','ans']),
-    explanation:find(['explanation','solution','details']),
-    explanation_hi:find(['explanation_hi','hindi_explanation','solution_hi','hindi_solution','vyakhya']),
+    question:find(['question','question_text','ques','problem','question_title','q_text','question_en']),
+    question_hi:find(['question_hi','hindi_question','question_hindi','hindi_ques','ques_hi','hindi','question_in_hindi']),
+    a:find(['option_a','a','optiona','opt_a','opta','option_1','opt_1','choice_a','choice_1']),
+    b:find(['option_b','b','optionb','opt_b','optb','option_2','opt_2','choice_b','choice_2']),
+    c:find(['option_c','c','optionc','opt_c','optc','option_3','opt_3','choice_c','choice_3']),
+    d:find(['option_d','d','optiond','opt_d','optd','option_4','opt_4','choice_d','choice_4']),
+    a_hi:find(['option_a_hi','a_hi','optiona_hi','opt_a_hi','hindi_option_a','option_1_hi']),
+    b_hi:find(['option_b_hi','b_hi','optionb_hi','opt_b_hi','hindi_option_b','option_2_hi']),
+    c_hi:find(['option_c_hi','c_hi','optionc_hi','opt_c_hi','hindi_option_c','option_3_hi']),
+    d_hi:find(['option_d_hi','d_hi','optiond_hi','opt_d_hi','hindi_option_d','option_4_hi']),
+    answer:find(['correct_answer','answer','correct','ans','correct_option','correct_opt','key','ans_key']),
+    explanation:find(['explanation','solution','details','sol','expl','description']),
+    explanation_hi:find(['explanation_hi','hindi_explanation','solution_hi','hindi_solution','vyakhya','spashtikaran']),
     subject:find(['subject','section']),
     topic:find(['topic','chapter']),
     subtopic:find(['subtopic']),
@@ -1337,7 +1375,14 @@ function parseTxtQuestions(text,sourceName){
     else if(currentField==='explanation')q.explanation+=(q.explanation?' ':'')+line;
     else if(currentField==='explanation_hi')q.explanation_hi+=(q.explanation_hi?' ':'')+line;
     else if(currentField==='question_hi')q.question_hi+=(q.question_hi?' ':'')+line;
-    else if(currentField==='answer')q.correct_answer=cleanAnswer(q.correct_answer+' '+line, q);
+    else if(currentField==='answer') {
+      if(line.length > 5 && !/^[A-D1-4क-घ][\.\)]/i.test(line)) {
+        q.explanation = (q.explanation ? q.explanation + ' ' : '') + line;
+        currentField = 'explanation';
+      } else {
+        q.correct_answer = cleanAnswer(q.correct_answer + ' ' + line, q);
+      }
+    }
     else q.question+=(q.question?' ':'')+line;
   }
   push(); return out;
@@ -1362,7 +1407,7 @@ function validateQuestion(r){
 function Questions({session}){const inputRef=useRef(null),[file,setFile]=useState(null),[status,setStatus]=useState(''),[rows,setRows]=useState([]),[active,setActive]=useState('pending_review'),[loading,setLoading]=useState(false),[selected,setSelected]=useState([]),[stats,setStats]=useState({pending:0,approved:0,needs:0});
   const choose=e=>{const f=e.target.files?.[0];if(!f)return;setFile(f);setStatus(`Selected ${f.name} — ready to process`)};
   const refreshCounts=async()=>{if(!supabase)return;const q=async(st)=>{const {count}=await supabase.from('questions').select('*',{count:'exact',head:true}).eq('status',st);return count||0};const [pending,approved,needs]=await Promise.all([q('pending_review'),q('approved'),q('needs_correction')]);setStats({pending,approved,needs})};
-  const process=async()=>{if(!file||!supabase)return;setLoading(true);setStatus('Parsing and validating…');try{const ext=file.name.split('.').pop().toLowerCase();let parsed=[];if(ext==='txt')parsed=parseTxtQuestions(await file.text(),file.name);else if(ext==='csv')parsed=parseCsvRows(await file.text(),file.name);else if(['xlsx','xls'].includes(ext)){const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];parsed=parseCsvRows(XLSX.utils.sheet_to_csv(ws),file.name)}else throw new Error('Use TXT, CSV or XLSX. TXT is the recommended format.');if(!parsed.length)throw new Error('No questions detected.');const seen=new Set();let duplicateInFile=0;const batchId=`${file.name}-${Date.now()}`;const payload=parsed.map(r=>{let qEn=r.question||'';let qHi=r.question_hi||'';if(!qHi&&/[\u0900-\u097F]/.test(qEn)&&!/[a-zA-Z]/.test(qEn)){qHi=qEn;}const optA_hi=r.option_a_hi||(!/[a-zA-Z]/.test(r.option_a)&&/[\u0900-\u097F]/.test(r.option_a)?r.option_a:null);const optB_hi=r.option_b_hi||(!/[a-zA-Z]/.test(r.option_b)&&/[\u0900-\u097F]/.test(r.option_b)?r.option_b:null);const optC_hi=r.option_c_hi||(!/[a-zA-Z]/.test(r.option_c)&&/[\u0900-\u097F]/.test(r.option_c)?r.option_c:null);const optD_hi=r.option_d_hi||(!/[a-zA-Z]/.test(r.option_d)&&/[\u0900-\u097F]/.test(r.option_d)?r.option_d:null);const hasEn=Boolean((qEn&&/[a-zA-Z]/.test(qEn))||(r.option_a&&/[a-zA-Z]/.test(r.option_a)));const hasHi=Boolean(qHi||optA_hi||/[\u0900-\u097F]/.test(qEn));const lang=r.language||(hasEn&&hasHi?'English + Hindi':hasHi?'Hindi':'English');return{...r,question:qEn,question_hi:qHi||null,option_a_hi:optA_hi,option_b_hi:optB_hi,option_c_hi:optC_hi,option_d_hi:optD_hi,language:lang,import_batch:batchId,status:validateQuestion(r).length?'needs_correction':'approved'}}).filter(r=>{const key=normalizeText(r.question||r.question_hi);if(!key||seen.has(key)){duplicateInFile++;return false}seen.add(key);return true});let total=0,needs=0,approved=0,dupes=duplicateInFile;for(let i=0;i<payload.length;i+=200){const batch=payload.slice(i,i+200);const {data,error}=await supabase.rpc('admin_import_questions',{rows:batch});if(error)throw error;total+=Number(data?.inserted||0);needs+=Number(data?.needs_correction||0);approved+=Number(data?.approved||0);dupes+=Number(data?.duplicates||0)}setStatus(`${total} imported: ${approved} auto-published · ${needs} needs correction · ${dupes} duplicates skipped.`);await loadPending();await refreshCounts()}catch(e){await logEvent('error',e?.message||e,{source:'question-import',action:'import',data:{file:file?.name||''}});setStatus('Import failed: '+(e?.message||e))}finally{setLoading(false)}};
+  const process=async()=>{if(!file||!supabase)return;setLoading(true);setStatus('Parsing and validating…');try{const ext=file.name.split('.').pop().toLowerCase();let parsed=[];if(ext==='txt')parsed=parseTxtQuestions(await file.text(),file.name);else if(ext==='csv')parsed=parseCsvRows(await file.text(),file.name);else if(['xlsx','xls'].includes(ext)){const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});if(!wb.SheetNames||!wb.SheetNames.length)throw new Error('Excel workbook has no sheets.');const ws=wb.Sheets[wb.SheetNames[0]];parsed=parseCsvRows(XLSX.utils.sheet_to_csv(ws),file.name)}else throw new Error('Use TXT, CSV or XLSX. TXT is the recommended format.');if(!parsed.length)throw new Error('No questions detected.');const seen=new Set();let duplicateInFile=0;const batchId=`${file.name}-${Date.now()}`;const payload=parsed.map(r=>{let qEn=r.question||'';let qHi=r.question_hi||'';if(!qHi&&/[\u0900-\u097F]/.test(qEn)&&!/[a-zA-Z]/.test(qEn)){qHi=qEn;}const optA_hi=r.option_a_hi||(!/[a-zA-Z]/.test(r.option_a)&&/[\u0900-\u097F]/.test(r.option_a)?r.option_a:null);const optB_hi=r.option_b_hi||(!/[a-zA-Z]/.test(r.option_b)&&/[\u0900-\u097F]/.test(r.option_b)?r.option_b:null);const optC_hi=r.option_c_hi||(!/[a-zA-Z]/.test(r.option_c)&&/[\u0900-\u097F]/.test(r.option_c)?r.option_c:null);const optD_hi=r.option_d_hi||(!/[a-zA-Z]/.test(r.option_d)&&/[\u0900-\u097F]/.test(r.option_d)?r.option_d:null);const hasEn=Boolean((qEn&&/[a-zA-Z]/.test(qEn))||(r.option_a&&/[a-zA-Z]/.test(r.option_a)));const hasHi=Boolean(qHi||optA_hi||/[\u0900-\u097F]/.test(qEn));const lang=r.language||(hasEn&&hasHi?'English + Hindi':hasHi?'Hindi':'English');return{...r,question:qEn,question_hi:qHi||null,option_a_hi:optA_hi,option_b_hi:optB_hi,option_c_hi:optC_hi,option_d_hi:optD_hi,language:lang,import_batch:batchId,status:validateQuestion(r).length?'needs_correction':'approved'}}).filter(r=>{const key=normalizeText(r.question||r.question_hi);if(!key||seen.has(key)){duplicateInFile++;return false}seen.add(key);return true});let total=0,needs=0,approved=0,dupes=duplicateInFile;for(let i=0;i<payload.length;i+=200){const batch=payload.slice(i,i+200);let rpcDone=false;try{const {data,error}=await supabase.rpc('admin_import_questions',{rows:batch});if(!error){rpcDone=true;total+=Number(data?.inserted||0);needs+=Number(data?.needs_correction||0);approved+=Number(data?.approved||0);dupes+=Number(data?.duplicates||0)}}catch(_){}if(!rpcDone){const {data:insData,error:insErr}=await supabase.from('questions').insert(batch).select();if(insErr)throw insErr;const insApp=(insData||[]).filter(x=>x.status==='approved').length;const insNeeds=(insData||[]).filter(x=>x.status==='needs_correction').length;total+=(insData||[]).length;approved+=insApp;needs+=insNeeds}}setStatus(`${total} imported: ${approved} auto-published · ${needs} needs correction · ${dupes} duplicates skipped.`);await loadPending();await refreshCounts()}catch(e){await logEvent('error',e?.message||e,{source:'question-import',action:'import',data:{file:file?.name||''}});setStatus('Import failed: '+(e?.message||e))}finally{setLoading(false)}};
   const loadPending=async()=>{if(!supabase)return;const {data,error}=await supabase.from('questions').select('*').in('status',['pending_review','needs_correction']).order('created_at',{ascending:false}).limit(200);if(!error)setRows(data||[]);else setStatus('Load error: '+error.message)};
   const saveRow=async(r)=>{const {data,error}=await supabase.from('questions').update({question:r.question,question_hi:r.question_hi||null,option_a:r.option_a,option_b:r.option_b,option_c:r.option_c,option_d:r.option_d,option_a_hi:r.option_a_hi||null,option_b_hi:r.option_b_hi||null,option_c_hi:r.option_c_hi||null,option_d_hi:r.option_d_hi||null,correct_answer:cleanAnswer(r.correct_answer),explanation:r.explanation,explanation_hi:r.explanation_hi||null,subject:r.subject,topic:r.topic,subtopic:r.subtopic,difficulty:r.difficulty,language:r.language,exam:r.exam}).eq('id',r.id).select().single();if(error){setStatus(error.message);return false}setRows(rs=>rs.map(x=>x.id===r.id?data:x));return true};
   const updateRow=(id,key,value)=>setRows(rs=>rs.map(x=>x.id===id?{...x,[key]:value}:x));
@@ -1383,18 +1428,460 @@ function CurrentAffairs({setSelected,role}){const [items,setItems]=useState([]),
   return <><Title t="📰 Current Affairs" s="Daily, weekly and monthly current affairs from verified official government sources." action={<div className="ca-actions">{role==='admin'&&<button className="btn dark" disabled={syncing} onClick={sync}>{syncing?'Syncing…':'Sync Official Sources'}</button>}<button className="btn primary" onClick={()=>setSelected?.({name:'Current Affairs Daily Mock',total_questions:20,duration_minutes:20,marks_per_question:1,negative_marking:0.25,cat:'Subject Test'})}>Daily Mock (20 Q) <ArrowUpRight size={15}/></button><button className="btn light" onClick={()=>setSelected?.({name:'Current Affairs Weekly Revision',total_questions:50,duration_minutes:45,marks_per_question:1,negative_marking:0.25,cat:'Subject Test'})}>Weekly Mock (50 Q)</button><button className="btn light" onClick={()=>setSelected?.({name:'Current Affairs Monthly Marathon',total_questions:100,duration_minutes:90,marks_per_question:1,negative_marking:0.25,cat:'Subject Test'})}>Monthly (100 Q)</button></div>}/>{msg&&<div className="file-selected" style={{marginBottom:16}}>{msg}</div>}<div className="ca-grid"><div className="panel"><div className="panel-head"><b>Latest Updates (Grounded with Source Verification)</b><span className="success-badge">Official sources</span></div>{loading?<p className="muted">Loading current affairs…</p>:items.length?items.map(x=><article className="ca-item" key={x.id}><div><span className="tag">{x.category||'National'}</span><h3>{x.title}</h3><p>{x.summary}</p><small>{x.source_name||'Official source'} · {x.published_at?new Date(x.published_at).toLocaleDateString('en-IN'):''}</small></div><div className="ca-links">{x.source_url&&<a href={x.source_url} target="_blank" rel="noreferrer">Official Notice <ExternalLink size={13}/></a>}<span>{x.question_count||0} Q</span></div></article>):<div className="empty-state"><Bell size={35}/><h3>Current affairs feed is ready</h3><p>Admin can sync official sources or wait for the 00:00 IST scheduled ingestion.</p></div>}</div><div className="panel"><div className="panel-head"><b>Official Ingestion Sources</b></div><div className="activity-list"><p>🏛️ <b>PIB (Press Information Bureau)</b> - Govt of India</p><p>🏦 <b>RBI (Reserve Bank of India)</b> - Notifications & Circulars</p><p>📈 <b>SEBI & NABARD</b> - Financial Regulations</p><p>🟢 <b>MP Government Portal</b> - MP State Affairs</p><p>🛰️ <b>ISRO & Science Ministries</b> - Technology Updates</p><p>🏆 <b>Ministry of Youth Affairs & Sports</b></p></div></div></div></>;
 }
 
+function deriveExamSubject(title) {
+  const t = String(title || '').toLowerCase().trim();
+  if (t.includes('reasoning') || t.includes('puzzle') || t.includes('general intelligence')) return 'Reasoning';
+  if (t.includes('math') || t.includes('quantitative') || t.includes('aptitude') || t.includes('arithmetic')) return 'Mathematics';
+  if (t.includes('banking awareness') || t.includes('banking') || t.includes('financial awareness') || t.includes('bank po')) return 'Banking Awareness';
+  if (t.includes('current affairs')) return 'Current Affairs';
+  if (t.includes('computer') || t.includes('it knowledge') || t.includes('computer knowledge')) return 'Computer';
+  if (t.includes('english')) return 'English';
+  if (t.includes('hindi')) return 'Hindi';
+  if (t.includes('civil engineering') || t.includes('civil')) return 'Civil Engineering';
+  if (t.includes('electrical engineering') || t.includes('electrical')) return 'Electrical Engineering';
+  if (t.includes('mechanical engineering') || t.includes('mechanical')) return 'Mechanical Engineering';
+  if (t.includes('mp gk') || t.includes('mppsc')) return 'General Awareness';
+  if (t.includes('general awareness') || t.includes('general studies') || t.includes('gk')) return 'General Awareness';
+  return '';
+}
+
+function matchExamSubjectStrict(qSubject, targetSubject) {
+  const q = String(qSubject || '').trim().toLowerCase();
+  const t = String(targetSubject || '').trim().toLowerCase();
+  if (!q || !t) return false;
+  if (q === t) return true;
+  if (t === 'mathematics') {
+    if (['reasoning', 'puzzle', 'syllogism', 'inequality', 'seating'].some(k => q.includes(k))) return false;
+    return ['quant', 'quantitative aptitude', 'math', 'maths', 'arithmetic'].includes(q) || q.includes('math');
+  }
+  if (t === 'reasoning') {
+    if (['mathematics', 'math', 'arithmetic', 'quant', 'simplification', 'profit'].some(k => q.includes(k))) return false;
+    return ['logical reasoning', 'general intelligence', 'puzzle'].includes(q) || q.includes('reasoning');
+  }
+  if (t === 'banking awareness') return q.includes('bank') || q.includes('financial');
+  if (t === 'general awareness') return q.includes('gk') || q.includes('general') || q.includes('awareness') || q.includes('current');
+  if (t === 'current affairs') return q.includes('current affairs') || q.includes('ca');
+  if (t === 'computer') return q.includes('computer') || q.includes('it');
+  if (t === 'english') return q.includes('english');
+  if (t === 'hindi') return q.includes('hindi');
+  if (t === 'civil engineering') return q.includes('civil');
+  if (t === 'electrical engineering') return q.includes('electrical');
+  if (t === 'mechanical engineering') return q.includes('mechanical');
+  return q.includes(t) || t.includes(q);
+}
+
 function AdminExams({session}){
-  const EXAM_TITLE_OPTIONS=['IBPS RRB PO Mock','IBPS RRB Clerk Mock','IBPS PO Mock','IBPS Clerk Mock','Bank PO Mock','Banking Awareness Mock','MP Police Constable Mock','MP SI Mock','MPPSC Prelims Mock','MPPSC Mains Mock','MPESB Group 1 Mock','MPESB Group 2 Mock','MP Sub Engineer Mock','MP Junior Engineer Mock','Civil Engineering Mock','Electrical Engineering Mock','Mechanical Engineering Mock','Reasoning Mock','Mathematics Mock','Puzzle Marathon Mock','English Mock','Hindi Mock','General Awareness Mock','Current Affairs Mock','Computer Knowledge Mock'];
+  const EXAM_TITLE_OPTIONS=['IBPS RRB PO Mock','IBPS RRB Clerk Mock','IBPS PO Mock','IBPS Clerk Mock','Bank PO Mock','Banking Awareness Mock','MP Police Constable Mock','MP SI Mock','MPPSC Prelims Mock','MPPSC Mains Mock','MPESB Group 1 Mock','MPESB Group 2 Mock','MP Sub Engineer Mock','MP Junior Engineer Mock','Civil Engineering Mock','Electrical Engineering Mock','Mechanical Engineering Mock','Reasoning Mock','Mathematics Mock','Puzzle Marathon Mock','English Mock','Hindi Mock','General Awareness Mock','Current Affairs Mock','Computer Knowledge Mock','[Custom Mock Pattern]'];
+  const POOL_SUBJECTS=['Mathematics','Reasoning','Banking Awareness','General Awareness','Current Affairs','Computer','English','Hindi','Civil Engineering','Electrical Engineering','Mechanical Engineering'];
   const [data,setData]=useState([]),[loading,setLoading]=useState(true),[msg,setMsg]=useState(''),[viewTab,setViewTab]=useState('list');
-  const [form,setForm]=useState({title:'',duration:60,question_count:25,negative_mark:0.25,status:'draft'});
-  const load=async()=>{if(!supabase)return;const {data,error}=await supabase.from('exams').select('*').order('created_at',{ascending:false}).limit(100);if(error){setMsg(error.message);logEvent('error',error.message,{source:'exam-management',action:'load-exams'})}setData(data||[]);setLoading(false)};
-  useEffect(()=>{load()},[]);
-  const mapQuestions=async(id)=>{setMsg('Mapping approved questions…');const {data,error}=await supabase.rpc('admin_map_exam_questions',{p_exam_id:id});if(error){setMsg('Auto-map failed: '+error.message);return}setMsg(`Auto-map complete: ${data?.added||0} added · ${data?.total||0} total assigned.`)};
-  const create=async()=>{if(!form.title.trim()){setMsg('Exam title is required.');return}setMsg('Creating exam…');const {data:created,error}=await supabase.rpc('admin_create_exam',{p_title:form.title.trim(),p_exam_type:null,p_subject:null,p_total_questions:Number(form.question_count),p_duration_minutes:Number(form.duration),p_marks_per_question:1,p_negative_marking:Number(form.negative_mark),p_randomize_questions:true,p_published:form.status==='published',p_status:form.status,p_created_by:session?.user?.id||null});if(error){await logEvent('error',error.message,{source:'exam-management',action:'create-exam',data:{title:form.title.trim()}});setMsg('Create failed: '+error.message);return}setForm({...form,title:''});let mapMsg='';if(created?.id){const mr=await supabase.rpc('admin_map_exam_questions',{p_exam_id:created.id});if(!mr.error)mapMsg=` Auto-mapped ${mr.data?.total||0} approved questions.`;}setMsg('Exam created successfully.'+mapMsg);await load()};
-  return <><Title t="📝 Exam Management" s="Create real mock structures, assemble mocks with syllabus blueprints, and publish verified tests."/><div className="review-tabs" style={{marginBottom:18}}><button className={'btn '+(viewTab==='list'?'dark':'light')} onClick={()=>setViewTab('list')}>Saved Exams & Patterns ({data.length})</button><button className={'btn '+(viewTab==='blueprint'?'dark':'light')} onClick={()=>setViewTab('blueprint')}><Sparkles size={15}/> Blueprint-Driven AI Mock Generator</button></div>{viewTab==='blueprint'?<AiMockGenerator supabase={supabase} onExamCreated={load}/>:<>
-  <div className="panel"><div className="panel-head"><b>Manual Exam Pattern Creator</b></div><div className="form-grid"><label>Exam Title<select value={form.title} onChange={e=>setForm({...form,title:e.target.value})}><option value="">Select Exam / Mock</option>{EXAM_TITLE_OPTIONS.map(x=><option key={x} value={x}>{x}</option>)}</select></label><label>Questions<input type="number" min="1" value={form.question_count} onChange={e=>setForm({...form,question_count:e.target.value})}/></label><label>Duration (min)<input type="number" min="1" value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})}/></label><label>Negative Marking<input type="number" min="0" step="0.01" value={form.negative_mark} onChange={e=>setForm({...form,negative_mark:e.target.value})}/></label><label>Status<select value={form.status} onChange={e=>setForm({...form,status:e.target.value})}><option value="draft">Draft</option><option value="published">Published</option></select></label></div><button className="btn primary" onClick={create}><PlusCircle size={16}/> Create Exam</button>{msg&&<div className="file-selected" style={{marginTop:12}}>{msg}</div>}</div>
-  <div className="panel"><div className="panel-head"><b>Saved Exams</b><span className="success-badge">{loading?'Loading…':`${data.length} records`}</span></div>{data.length?data.map(e=><div className="candidate-row" key={e.id}><div><b>{e.title}</b><small>{e.total_questions||0} questions · {e.duration_minutes||0} min · −{e.negative_marking||0}</small></div><div className="quick-actions"><span className="tag">{e.status}</span><button className="btn light" onClick={()=>mapQuestions(e.id)}>Auto-map Questions</button></div></div>):!loading&&<p className="muted">No exams created yet.</p>}</div>
-  </>}</>;
+  const [form,setForm]=useState({title:'',custom_title:'',subject:'',duration:60,question_count:25,negative_mark:0.25,status:'published'});
+
+  const performAutoMap = async (examObj) => {
+    if (!supabase || !examObj?.id) return { ok: false, added: 0, total: 0 };
+    const examId = examObj.id;
+    const configuredTotal = Math.max(1, Number(examObj.total_questions || 25));
+    const targetSubject = examObj.subject || deriveExamSubject(examObj.title);
+
+    // 1. Try server RPC first
+    try {
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('admin_map_exam_questions', { p_exam_id: examId });
+      if (!rpcErr && (rpcRes?.added > 0 || rpcRes?.total >= configuredTotal)) {
+        return { ok: true, added: rpcRes?.added || 0, total: rpcRes?.total || 0, subject: targetSubject };
+      }
+    } catch (_) {}
+
+    // 2. Client-side query & auto-map active approved questions from matching pool
+    try {
+      const { data: existingMapped } = await supabase
+        .from('exam_questions')
+        .select('question_id, question_order')
+        .eq('exam_id', examId)
+        .order('question_order', { ascending: true });
+
+      const mappedIds = new Set((existingMapped || []).map(r => r.question_id));
+      const currentCount = mappedIds.size;
+      const needed = Math.max(0, configuredTotal - currentCount);
+
+      if (needed <= 0 && currentCount > 0) {
+        return { ok: true, added: 0, total: currentCount, subject: targetSubject };
+      }
+
+      // Query active approved questions
+      const { data: poolData, error: poolErr } = await supabase
+        .from('questions')
+        .select('id, question, option_a, option_b, option_c, option_d, correct_answer, subject, exam, status')
+        .eq('status', 'approved')
+        .order('created_at', { ascending: false })
+        .limit(600);
+
+      if (poolErr || !poolData?.length) {
+        return { ok: false, added: 0, total: currentCount, error: poolErr?.message || 'Question bank empty' };
+      }
+
+      // Filter valid publishable questions strictly
+      const validPool = poolData.filter(q => {
+        if (mappedIds.has(q.id)) return false;
+        const ans = cleanAnswer(q.correct_answer);
+        if (!/^[ABCD]$/.test(ans)) return false;
+        if (!q.option_a || !q.option_b || !q.option_c || !q.option_d) return false;
+        const opts = [q.option_a, q.option_b, q.option_c, q.option_d].map(x => String(x).trim().toLowerCase());
+        if (new Set(opts).size < 4) return false;
+        if (isDependentContextMissing(q.question)) return false;
+        return true;
+      });
+
+      const selected = [];
+      const selectedIds = new Set();
+
+      // Priority 1: Match subject or exam keywords
+      for (const q of validPool) {
+        if (selected.length >= needed) break;
+        const subMatch = targetSubject && matchExamSubjectStrict(q.subject, targetSubject);
+        const examMatch = examObj.title && q.exam && (
+          examObj.title.toLowerCase().includes(String(q.exam).toLowerCase()) ||
+          String(q.exam).toLowerCase().includes(examObj.title.toLowerCase())
+        );
+        if ((subMatch || examMatch) && !selectedIds.has(q.id)) {
+          selected.push(q);
+          selectedIds.add(q.id);
+        }
+      }
+
+      // Priority 2: Safe fallback to active approved pool so 0 questions is NEVER assigned
+      if (selected.length < needed) {
+        for (const q of validPool) {
+          if (selected.length >= needed) break;
+          if (!selectedIds.has(q.id)) {
+            selected.push(q);
+            selectedIds.add(q.id);
+          }
+        }
+      }
+
+      if (selected.length > 0) {
+        const nextOrderStart = (existingMapped || []).length;
+        const mappings = selected.map((q, idx) => ({
+          exam_id: examId,
+          question_id: q.id,
+          question_order: nextOrderStart + idx + 1
+        }));
+
+        const { error: insErr } = await supabase
+          .from('exam_questions')
+          .insert(mappings);
+
+        if (insErr) {
+          return { ok: false, added: 0, total: currentCount, error: insErr.message };
+        }
+
+        return {
+          ok: true,
+          added: mappings.length,
+          total: currentCount + mappings.length,
+          subject: targetSubject
+        };
+      }
+
+      return { ok: true, added: 0, total: currentCount, subject: targetSubject };
+    } catch (e) {
+      console.warn('performAutoMap failed:', e);
+      return { ok: false, added: 0, total: 0, error: e.message };
+    }
+  };
+
+  const load = async () => {
+    if (!supabase) return;
+    setLoading(true);
+    const { data: exams, error } = await supabase
+      .from('exams')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (error) {
+      setMsg(error.message);
+      logEvent('error', error.message, { source: 'exam-management', action: 'load-exams' });
+    }
+
+    const { data: eqRows } = await supabase
+      .from('exam_questions')
+      .select('exam_id');
+
+    const counts = {};
+    (eqRows || []).forEach(r => {
+      counts[r.exam_id] = (counts[r.exam_id] || 0) + 1;
+    });
+
+    const enriched = (exams || []).map(e => ({
+      ...e,
+      mapped_count: counts[e.id] !== undefined ? counts[e.id] : 0
+    }));
+
+    setData(enriched);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const mapQuestions = async (examObj) => {
+    setMsg(`Auto-mapping approved questions for "${examObj.title}"…`);
+    const res = await performAutoMap(examObj);
+    if (!res.ok) {
+      setMsg(`Auto-map notice: ${res.error || 'Check question bank pool'}`);
+    } else {
+      setMsg(`Auto-map complete: ${res.added} approved questions added (${res.total} total assigned).`);
+    }
+    await load();
+  };
+
+  const publishExam = async (examObj) => {
+    setMsg(`Publishing "${examObj.title}" & auto-mapping approved questions…`);
+    await supabase.from('exams').update({ status: 'published', published: true, updated_at: new Date().toISOString() }).eq('id', examObj.id);
+    const res = await performAutoMap(examObj);
+    setMsg(`Published "${examObj.title}" successfully with ${res.total} approved questions assigned!`);
+    await load();
+  };
+
+  const create = async () => {
+    const rawTitle = form.title === '[Custom Mock Pattern]' ? form.custom_title.trim() : form.title.trim();
+    if (!rawTitle) {
+      setMsg('Exam title is required.');
+      return;
+    }
+    setMsg('Creating exam pattern & auto-mapping approved questions…');
+    const selectedSubject = form.subject || deriveExamSubject(rawTitle) || null;
+    let created = null;
+
+    // 1. Try admin_create_exam RPC
+    const { data: rpcCreated, error: rpcErr } = await supabase.rpc('admin_create_exam', {
+      p_title: rawTitle,
+      p_exam_type: 'mock',
+      p_subject: selectedSubject,
+      p_total_questions: Number(form.question_count),
+      p_duration_minutes: Number(form.duration),
+      p_marks_per_question: 1,
+      p_negative_marking: Number(form.negative_mark),
+      p_randomize_questions: true,
+      p_published: form.status === 'published',
+      p_status: form.status,
+      p_created_by: session?.user?.id || null
+    });
+
+    if (!rpcErr && rpcCreated?.id) {
+      created = rpcCreated;
+    } else {
+      // 2. Direct insert fallback
+      const { data: directCreated, error: dirErr } = await supabase
+        .from('exams')
+        .insert({
+          title: rawTitle,
+          exam_type: 'mock',
+          subject: selectedSubject,
+          total_questions: Number(form.question_count),
+          duration_minutes: Number(form.duration),
+          marks_per_question: 1,
+          negative_marking: Number(form.negative_mark),
+          randomize_questions: true,
+          published: form.status === 'published',
+          status: form.status,
+          created_by: session?.user?.id || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (dirErr) {
+        setMsg('Create failed: ' + dirErr.message);
+        await logEvent('error', dirErr.message, { source: 'exam-management', action: 'create-exam', data: { title: rawTitle } });
+        return;
+      }
+      created = directCreated;
+    }
+
+    setForm({ ...form, title: '', custom_title: '', subject: '' });
+
+    // Auto-map active approved questions immediately so 0 questions is never assigned!
+    let mapMsg = '';
+    if (created?.id) {
+      const mapRes = await performAutoMap(created);
+      mapMsg = ` Auto-mapped ${mapRes.added} approved questions (${mapRes.total} total assigned).`;
+    }
+
+    setMsg(`Exam pattern ${form.status === 'published' ? 'published' : 'created'} successfully!${mapMsg}`);
+    await load();
+  };
+
+  return (
+    <>
+      <Title
+        t="📝 Exam Management"
+        s="Create real mock structures, assemble mocks with syllabus blueprints, and publish verified tests with guaranteed approved question mappings."
+      />
+      <div className="review-tabs" style={{ marginBottom: 18 }}>
+        <button className={'btn ' + (viewTab === 'list' ? 'dark' : 'light')} onClick={() => setViewTab('list')}>
+          Saved Exams & Patterns ({data.length})
+        </button>
+        <button className={'btn ' + (viewTab === 'blueprint' ? 'dark' : 'light')} onClick={() => setViewTab('blueprint')}>
+          <Sparkles size={15} /> Blueprint-Driven AI Mock Generator
+        </button>
+      </div>
+
+      {viewTab === 'blueprint' ? (
+        <AiMockGenerator supabase={supabase} onExamCreated={load} />
+      ) : (
+        <>
+          <div className="panel">
+            <div className="panel-head">
+              <b>Manual Exam Pattern Creator</b>
+              <span className="success-badge">Auto-Maps Approved Pool</span>
+            </div>
+            <div className="form-grid">
+              <label>
+                Exam Title / Pattern
+                <select
+                  value={form.title}
+                  onChange={e => {
+                    const val = e.target.value;
+                    const autoSub = deriveExamSubject(val);
+                    setForm({ ...form, title: val, subject: form.subject || autoSub });
+                  }}
+                >
+                  <option value="">Select Exam / Mock</option>
+                  {EXAM_TITLE_OPTIONS.map(x => (
+                    <option key={x} value={x}>{x}</option>
+                  ))}
+                </select>
+              </label>
+
+              {form.title === '[Custom Mock Pattern]' && (
+                <label>
+                  Custom Exam Title
+                  <input
+                    type="text"
+                    placeholder="e.g. SBI PO Mains Mock Test 1"
+                    value={form.custom_title}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setForm({ ...form, custom_title: val, subject: form.subject || deriveExamSubject(val) });
+                    }}
+                  />
+                </label>
+              )}
+
+              <label>
+                Subject / Domain Pool
+                <select
+                  value={form.subject}
+                  onChange={e => setForm({ ...form, subject: e.target.value })}
+                >
+                  <option value="">Auto-Detect from Title</option>
+                  {POOL_SUBJECTS.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Total Questions
+                <input
+                  type="number"
+                  min="1"
+                  value={form.question_count}
+                  onChange={e => setForm({ ...form, question_count: e.target.value })}
+                />
+              </label>
+
+              <label>
+                Duration (minutes)
+                <input
+                  type="number"
+                  min="1"
+                  value={form.duration}
+                  onChange={e => setForm({ ...form, duration: e.target.value })}
+                />
+              </label>
+
+              <label>
+                Negative Marking
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.negative_mark}
+                  onChange={e => setForm({ ...form, negative_mark: e.target.value })}
+                />
+              </label>
+
+              <label>
+                Status
+                <select
+                  value={form.status}
+                  onChange={e => setForm({ ...form, status: e.target.value })}
+                >
+                  <option value="published">Published (Live for Candidates)</option>
+                  <option value="draft">Draft (Admin Staging)</option>
+                </select>
+              </label>
+            </div>
+
+            <button className="btn primary" onClick={create}>
+              <PlusCircle size={16} /> Create & Publish Exam Pattern
+            </button>
+            {msg && <div className="file-selected" style={{ marginTop: 12 }}>{msg}</div>}
+          </div>
+
+          <div className="panel">
+            <div className="panel-head">
+              <b>Saved Exams & Question Mappings</b>
+              <span className="success-badge">{loading ? 'Loading…' : `${data.length} records`}</span>
+            </div>
+            {data.length ? (
+              data.map(e => (
+                <div className="candidate-row" key={e.id}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <b>{e.title}</b>
+                      {e.subject && <span className="tag" style={{ fontSize: 11 }}>{e.subject}</span>}
+                      {e.mapped_count === 0 ? (
+                        <span className="error-badge" style={{ fontSize: 11, padding: '2px 8px' }}>
+                          ⚠️ 0 approved questions mapped
+                        </span>
+                      ) : e.mapped_count >= (e.total_questions || 25) ? (
+                        <span className="success-badge" style={{ fontSize: 11, padding: '2px 8px' }}>
+                          ✓ {e.mapped_count} questions assigned
+                        </span>
+                      ) : (
+                        <span className="tag" style={{ fontSize: 11, background: '#fef3c7', color: '#92400e' }}>
+                          {e.mapped_count}/{e.total_questions || 25} mapped
+                        </span>
+                      )}
+                    </div>
+                    <small>
+                      Configured: {e.total_questions || 0} questions · {e.duration_minutes || 0} min · −{e.negative_marking || 0} negative mark
+                    </small>
+                  </div>
+                  <div className="quick-actions">
+                    <span className="tag">{e.status}</span>
+                    {e.status === 'draft' && (
+                      <button className="btn primary sm" onClick={() => publishExam(e)}>
+                        Publish & Map
+                      </button>
+                    )}
+                    <button className="btn light sm" onClick={() => mapQuestions(e)}>
+                      {e.mapped_count === 0 ? '⚡ Auto-map Questions' : 'Auto-map More'}
+                    </button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              !loading && <p className="muted">No exams created yet.</p>
+            )}
+          </div>
+        </>
+      )}
+    </>
+  );
 }
 function Candidates({session}){const[data,setData]=useState([]),[loading,setLoading]=useState(true),[msg,setMsg]=useState(''),[deletingId,setDeletingId]=useState(''),[form,setForm]=useState({name:'',email:'',phone:'',password:'',role:'candidate'});const load=async()=>{setLoading(true);const {data,error}=await supabase.from('profiles').select('id,full_name,email,phone,role,created_at').in('role',['candidate','sub_admin','question_manager','exam_manager','vacancy_manager','content_manager','support','admin']).order('created_at',{ascending:false}).limit(500);if(error)setMsg(error.message);setData(data||[]);setLoading(false)};useEffect(()=>{load()},[]);const create=async()=>{setMsg('');if(!form.name.trim()||!form.email.trim()||form.password.length<8){setMsg('Name, email and password (8+ characters) are required.');return}setLoading(true);try{const token=session?.access_token||(await supabase?.auth?.getSession())?.data?.session?.access_token||'';const r=await fetch('/api/admin-create-user',{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify(form)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'User creation failed.');setMsg(`User created: ${j.email||form.email}`);setForm({name:'',email:'',phone:'',password:'',role:'candidate'});await load()}catch(e){setMsg(e.message||'Failed to create user.')}finally{setLoading(false)}};const deleteUser=async(user)=>{if(user.id===session?.user?.id){alert('You cannot delete your active admin account.');return}if(!window.confirm(`Permanently remove user ${user.full_name||user.email} (${user.email})?`))return;setDeletingId(user.id);try{const token=session?.access_token||(await supabase?.auth?.getSession())?.data?.session?.access_token||'';const r=await fetch('/api/admin-create-user',{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({action:'delete',userId:user.id})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Delete failed.');setData(prev=>prev.filter(u=>u.id!==user.id));setMsg(`User ${user.email||user.full_name} deleted.`);}catch(e){setMsg(e.message||'Failed to delete user.');}finally{setDeletingId('');}};return <><Title t="👥 Users & Candidates" s="Create candidates and staff accounts from the admin portal. Auth creation happens server-side; secrets never reach the browser."/><div className="panel"><div className="panel-head"><b>Create New User</b><span className="success-badge">Admin only</span></div><div className="form-grid"><label>Full Name<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Candidate name"/></label><label>Email<input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="candidate@example.com"/></label><label>Mobile<input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="+91..."/></label><label>Temporary Password<input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="Minimum 8 characters"/></label><label>Role<select value={form.role} onChange={e=>setForm({...form,role:e.target.value})}><option value="candidate">Candidate</option><option value="sub_admin">Sub-admin</option><option value="question_manager">Question Manager</option><option value="exam_manager">Exam Manager</option><option value="vacancy_manager">Vacancy Manager</option><option value="content_manager">Content Manager</option><option value="support">Support</option></select></label></div><button className="btn primary" onClick={create} disabled={loading}><PlusCircle size={16}/> Create User</button>{msg&&<div className={msg.startsWith('User created')||msg.includes('deleted')?'success-badge':'error-badge'} style={{marginTop:12}}>{msg}</div>}</div><div className="panel"><div className="panel-head"><b>Registered Users</b><span className="success-badge">{loading?'Loading…':`${data.length} records`}</span></div>{!loading&&data.length?data.map(c=>{const isSelf=c.id===session?.user?.id;return <div className="candidate-row" key={c.id}><div className="avatar sm">{(c.full_name||c.email||'U')[0].toUpperCase()}</div><div style={{flex:1}}><b>{c.full_name||'Unnamed User'} {isSelf&&<span style={{color:'#6366f1',fontSize:11}}>(You)</span>}</b><small>{c.email||'No email'} · {c.phone||'No mobile'}</small></div><span className="tag" style={{marginRight:8}}>{c.role}</span>{!isSelf&&<button className="danger-icon-btn" onClick={()=>deleteUser(c)} disabled={deletingId===c.id}><Trash2 size={13}/> {deletingId===c.id?'Deleting...':'Remove'}</button>}</div>}):<div className="empty-state"><Users size={35}/><h3>{loading?'Loading user database…':'No users yet'}</h3></div>}</div></>}
 

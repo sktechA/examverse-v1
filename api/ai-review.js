@@ -5,14 +5,28 @@ import {
   validateQuestionDeterministic,
   verifyAdminAuth,
   cleanJsonParse,
-  handleCorsAndOptions
+  callGeminiWithRetry,
+  getNormalizedGeminiModel,
+  handleCorsAndOptions,
+  sanitizeObject,
+  sanitizeString,
+  sanitizeErrorResponse,
+  checkRateLimit,
+  getClientIp
 } from './_shared.js';
 
 async function writeLog(sb, level, source, action, message, details = {}, user_id = null) {
   try {
     await sb
       .from('system_logs')
-      .insert({ level, source, action, message: String(message).slice(0, 2000), details, user_id });
+      .insert({
+        level: sanitizeString(level, 20),
+        source: sanitizeString(source, 50),
+        action: sanitizeString(action, 50),
+        message: sanitizeString(message, 1000),
+        details,
+        user_id
+      });
   } catch (_) {}
 }
 
@@ -42,29 +56,33 @@ Return JSON only in format:
   ]
 }`;
 
-  // 15 second timeout protection against hung calls
-  const response = await Promise.race([
-    geminiClient.models.generateContent({
-      model: process.env.GEMINI_REVIEW_MODEL_ID || 'gemini-3.8-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: prompt },
-            { text: JSON.stringify({ questions }) }
-          ]
+  // 15 second timeout protection with exponential backoff retry against hung calls
+  const response = await callGeminiWithRetry(
+    () =>
+      geminiClient.models.generateContent({
+        model: getNormalizedGeminiModel(process.env.GEMINI_REVIEW_MODEL_ID),
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: prompt },
+              { text: JSON.stringify({ questions }) }
+            ]
+          }
+        ],
+        config: {
+          responseMimeType: 'application/json'
         }
-      ],
-      config: {
-        responseMimeType: 'application/json'
-      }
-    }),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Gemini review request timed out after 15s')), 15000)
-    )
-  ]);
+      }),
+    {
+      operationName: 'Gemini AI Batch Review',
+      maxRetries: 3,
+      timeoutMs: 15000,
+      initialDelayMs: 1000
+    }
+  );
 
-  const parsed = cleanJsonParse(response.text || '{}');
+  const parsed = cleanJsonParse(response?.text || '{}');
   return Array.isArray(parsed.reviews) ? parsed.reviews : [];
 }
 
@@ -77,12 +95,22 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, error: 'POST required' });
   }
 
+  // 1. Autonomous Rate Limiting (Protects Gemini quota & server load)
+  const ip = getClientIp(req);
+  const rate = checkRateLimit(ip, 'ai-review', 20, 60000);
+  if (!rate.allowed) {
+    if (res && typeof res.setHeader === 'function') {
+      res.setHeader('Retry-After', String(rate.retryAfter));
+    }
+    return res.status(429).json({ ok: false, error: 'Too many requests. Please wait before triggering another AI review batch.' });
+  }
+
   const sb = getSupabaseAdmin(req);
   if (!sb) {
     return res.status(500).json({ ok: false, error: 'Database server configuration unavailable' });
   }
 
-  // 1. Admin Authorization Verification
+  // 2. Admin Authorization Verification
   const auth = await verifyAdminAuth(req, sb);
   if (!auth.ok) {
     return res.status(auth.statusCode || 401).json({ ok: false, error: auth.error });
@@ -91,8 +119,9 @@ export default async function handler(req, res) {
   const user = auth.user;
 
   try {
-    // 2. Batch Limit Protection (Max 25 per request to prevent cost abuse)
-    const rawLimit = Number(req.body?.limit || 20);
+    // 3. Batch Limit Protection (Max 25 per request to prevent cost abuse)
+    const body = sanitizeObject(req.body || {});
+    const rawLimit = Number(body?.limit || 20);
     const limit = Math.min(Math.max(rawLimit, 1), 25);
 
     // Fetch questions needing review that haven't been reviewed yet
@@ -169,8 +198,8 @@ export default async function handler(req, res) {
     }
 
     // 4. Gemini AI Review Pass (Strict Behavior: Item 2 & 3)
-    const isGeminiEnabled = (process.env.GEMINI_AI_ENABLED === 'true');
-    const geminiClient = isGeminiEnabled ? getGeminiClient() : null;
+    const isGeminiEnabled = (process.env.GEMINI_AI_ENABLED === 'true') || Boolean(req.geminiClient);
+    const geminiClient = req.geminiClient || (isGeminiEnabled ? getGeminiClient() : null);
 
     for (const q of deterministicValidCandidates) {
       let status = 'pending_review';
@@ -285,6 +314,6 @@ export default async function handler(req, res) {
         user?.id
       );
     }
-    return res.status(500).json({ ok: false, error: err?.message || 'AI review process failed' });
+    return res.status(500).json({ ok: false, error: sanitizeErrorResponse(err, 'AI review process failed') });
   }
 }

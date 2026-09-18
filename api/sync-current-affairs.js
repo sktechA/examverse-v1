@@ -7,8 +7,15 @@ import {
   validateQuestionDeterministic,
   verifyAdminAuth,
   cleanJsonParse,
+  callGeminiWithRetry,
+  getNormalizedGeminiModel,
   handleCorsAndOptions,
-  resolveOptionDuplicatesAndDistribute
+  resolveOptionDuplicatesAndDistribute,
+  sanitizeObject,
+  sanitizeString,
+  sanitizeErrorResponse,
+  checkRateLimit,
+  getClientIp
 } from './_shared.js';
 import crypto from 'node:crypto';
 
@@ -138,29 +145,40 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== 'POST' && req.method !== 'GET') {
-    return res.status(405).json({ error: 'GET or POST required' });
+    return res.status(405).json({ ok: false, error: 'GET or POST required' });
+  }
+
+  // 1. Autonomous Rate Limiting (Prevents flood of outbound feed scrapes & Gemini generation)
+  const ip = getClientIp(req);
+  const rate = checkRateLimit(ip, 'sync-current-affairs', 10, 60000);
+  if (!rate.allowed) {
+    if (res && typeof res.setHeader === 'function') {
+      res.setHeader('Retry-After', String(rate.retryAfter));
+    }
+    return res.status(429).json({ ok: false, error: 'Too many requests. Please wait before triggering another current affairs sync.' });
   }
 
   const sb = getSupabaseAdmin(req);
   if (!sb) {
-    return res.status(500).json({ error: 'Database server configuration unavailable' });
+    return res.status(500).json({ ok: false, error: 'Database server configuration unavailable' });
   }
 
-  // Authorization Check
+  // 2. Authorization Check
   const auth = await verifyAdminAuth(req, sb);
   if (!auth.ok) {
-    return res.status(auth.statusCode || 401).json({ error: auth.error });
+    return res.status(auth.statusCode || 401).json({ ok: false, error: auth.error });
   }
 
   try {
+    const body = sanitizeObject(req.body || {});
     const {
       generateQuestions = false,
       createQuiz = false,
       jobKey = null
-    } = req.body || {};
+    } = body;
 
     const todayStr = getKolkataDateString();
-    const effectiveJobKey = jobKey || `ca_sync_${todayStr}_kolkata`;
+    const effectiveJobKey = sanitizeString(jobKey || `ca_sync_${todayStr}_kolkata`, 100);
 
     // 1. Fetch real official bulletins
     const { bulletins: realBulletins, fetchStatus } = await fetchRealOfficialBulletins();
@@ -227,11 +245,20 @@ RULES:
   "explanation": "Exact factual explanation citing the official release"
 }`;
 
-          const response = await gemini.models.generateContent({
-            model: process.env.GEMINI_REVIEW_MODEL_ID || 'gemini-3.8-flash',
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            config: { responseMimeType: 'application/json' }
-          });
+          const response = await callGeminiWithRetry(
+            () =>
+              gemini.models.generateContent({
+                model: getNormalizedGeminiModel(process.env.GEMINI_REVIEW_MODEL_ID),
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                config: { responseMimeType: 'application/json' }
+              }),
+            {
+              operationName: `Current Affairs MCQ Generation (${bulletin.source_name || 'bulletin'})`,
+              maxRetries: 3,
+              timeoutMs: 20000,
+              initialDelayMs: 1000
+            }
+          );
 
           const rawParsed = cleanJsonParse(response.text || '{}');
           const parsed = resolveOptionDuplicatesAndDistribute(rawParsed);
@@ -326,7 +353,7 @@ RULES:
   } catch (err) {
     return res.status(500).json({
       ok: false,
-      error: err.message || 'Current affairs synchronization failed'
+      error: sanitizeErrorResponse(err, 'Current affairs synchronization failed')
     });
   }
 }

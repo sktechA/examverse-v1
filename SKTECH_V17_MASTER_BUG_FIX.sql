@@ -163,36 +163,68 @@ $$;
 REVOKE ALL ON FUNCTION public.get_exam_questions(uuid,integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_exam_questions(uuid,integer) TO authenticated;
 
--- 8) Correct exam mapping: derive subject from exam title if admin left subject blank, and respect exact total_questions.
+-- 8) Correct exam mapping: derive subject from exam title if admin left subject blank, query matching subject/exam pool, and prevent assigning 0 approved questions.
 CREATE OR REPLACE FUNCTION public.admin_map_exam_questions(p_exam_id uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
-DECLARE e public.exams; v_subject text; n int:=0; existing int:=0;
+DECLARE
+  e public.exams;
+  v_subject text;
+  n int := 0;
+  existing int := 0;
+  needed int := 0;
 BEGIN
- IF NOT public.is_admin() THEN RAISE EXCEPTION 'Admin access required'; END IF;
- SELECT * INTO e FROM public.exams WHERE id=p_exam_id; IF e.id IS NULL THEN RAISE EXCEPTION 'Exam not found'; END IF;
- v_subject:=nullif(trim(e.subject),'');
- IF v_subject IS NULL THEN
-   IF lower(e.title) ~ '(reasoning|general intelligence)' THEN v_subject:='Reasoning';
-   ELSIF lower(e.title) ~ '(math|quantitative|aptitude|mathematics)' THEN v_subject:='Mathematics';
-   ELSIF lower(e.title) ~ '(banking)' THEN v_subject:='Banking Awareness';
-   ELSIF lower(e.title) ~ '(computer)' THEN v_subject:='Computer';
-   ELSIF lower(e.title) ~ '(english)' THEN v_subject:='English';
-   ELSIF lower(e.title) ~ '(hindi)' THEN v_subject:='Hindi';
-   ELSIF lower(e.title) ~ '(current affairs)' THEN v_subject:='Current Affairs';
-   ELSIF lower(e.title) ~ '(general awareness|gk)' THEN v_subject:='General Awareness';
-   END IF;
- END IF;
- INSERT INTO public.exam_questions(exam_id,question_id,question_order)
- SELECT p_exam_id,q.id,row_number() over(order by q.created_at,q.id)::int
- FROM public.questions q
- WHERE q.status='approved' AND public.question_is_publishable(q)
-   AND (v_subject IS NULL OR lower(trim(coalesce(q.subject,'')))=lower(v_subject))
-   AND (nullif(trim(q.exam),'') IS NULL OR lower(q.exam) like '%'||lower(e.title)||'%' OR lower(e.title) like '%'||lower(q.exam)||'%')
-   AND NOT EXISTS (SELECT 1 FROM public.exam_questions x WHERE x.exam_id=p_exam_id AND x.question_id=q.id)
- ORDER BY q.created_at,q.id LIMIT greatest(coalesce(e.total_questions,25),1);
- GET DIAGNOSTICS n=row_count;
- SELECT count(*) INTO existing FROM public.exam_questions WHERE exam_id=p_exam_id;
- RETURN jsonb_build_object('ok',true,'added',n,'total',existing,'subject_used',v_subject,'configured_total',e.total_questions);
+  IF NOT public.is_admin() THEN RAISE EXCEPTION 'Admin access required'; END IF;
+  SELECT * INTO e FROM public.exams WHERE id=p_exam_id;
+  IF e.id IS NULL THEN RAISE EXCEPTION 'Exam not found'; END IF;
+
+  SELECT count(*) INTO existing FROM public.exam_questions WHERE exam_id=p_exam_id;
+  needed := greatest(coalesce(e.total_questions,25) - existing, 0);
+
+  v_subject := nullif(trim(e.subject),'');
+  IF v_subject IS NULL THEN
+    IF lower(e.title) ~ '(reasoning|general intelligence|puzzle)' THEN v_subject := 'Reasoning';
+    ELSIF lower(e.title) ~ '(math|quantitative|aptitude|arithmetic|mathematics)' THEN v_subject := 'Mathematics';
+    ELSIF lower(e.title) ~ '(banking|bank po)' THEN v_subject := 'Banking Awareness';
+    ELSIF lower(e.title) ~ '(computer|it)' THEN v_subject := 'Computer';
+    ELSIF lower(e.title) ~ '(english)' THEN v_subject := 'English';
+    ELSIF lower(e.title) ~ '(hindi)' THEN v_subject := 'Hindi';
+    ELSIF lower(e.title) ~ '(current affairs)' THEN v_subject := 'Current Affairs';
+    ELSIF lower(e.title) ~ '(civil engineering|civil)' THEN v_subject := 'Civil Engineering';
+    ELSIF lower(e.title) ~ '(electrical engineering|electrical)' THEN v_subject := 'Electrical Engineering';
+    ELSIF lower(e.title) ~ '(mechanical engineering|mechanical)' THEN v_subject := 'Mechanical Engineering';
+    ELSIF lower(e.title) ~ '(general awareness|gk|mppsc|mp gk)' THEN v_subject := 'General Awareness';
+    END IF;
+  END IF;
+
+  IF needed > 0 THEN
+    INSERT INTO public.exam_questions(exam_id,question_id,question_order)
+    SELECT p_exam_id, q.id, existing + (row_number() over(
+      ORDER BY
+        CASE
+          WHEN (v_subject IS NOT NULL AND lower(trim(coalesce(q.subject,'')))=lower(v_subject)) THEN 1
+          WHEN (nullif(trim(q.exam),'') IS NOT NULL AND (lower(e.title) LIKE '%'||lower(q.exam)||'%' OR lower(q.exam) LIKE '%'||lower(e.title)||'%')) THEN 2
+          ELSE 3
+        END,
+        q.created_at, q.id
+    ))::int
+    FROM public.questions q
+    WHERE q.status = 'approved'
+      AND public.question_is_publishable(q)
+      AND NOT EXISTS (SELECT 1 FROM public.exam_questions x WHERE x.exam_id=p_exam_id AND x.question_id=q.id)
+    ORDER BY
+      CASE
+        WHEN (v_subject IS NOT NULL AND lower(trim(coalesce(q.subject,'')))=lower(v_subject)) THEN 1
+        WHEN (nullif(trim(q.exam),'') IS NOT NULL AND (lower(e.title) LIKE '%'||lower(q.exam)||'%' OR lower(q.exam) LIKE '%'||lower(e.title)||'%')) THEN 2
+        ELSE 3
+      END,
+      q.created_at, q.id
+    LIMIT needed;
+
+    GET DIAGNOSTICS n=row_count;
+  END IF;
+
+  SELECT count(*) INTO existing FROM public.exam_questions WHERE exam_id=p_exam_id;
+  RETURN jsonb_build_object('ok',true,'added',n,'total',existing,'subject_used',v_subject,'configured_total',e.total_questions);
 END $$;
 REVOKE ALL ON FUNCTION public.admin_map_exam_questions(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.admin_map_exam_questions(uuid) TO authenticated;

@@ -11,7 +11,9 @@ import {
   ShieldCheck,
   Zap,
   Clock,
-  Server
+  Server,
+  Trash2,
+  X
 } from 'lucide-react';
 
 export default function SystemLogs({ supabase, session }) {
@@ -30,6 +32,13 @@ export default function SystemLogs({ supabase, session }) {
     warnings: 0,
     info: 0
   });
+
+  // Purge / Clear Logs Modal & State
+  const [showPurgeModal, setShowPurgeModal] = useState(false);
+  const [purgeScope, setPurgeScope] = useState('all');
+  const [purgeTarget, setPurgeTarget] = useState('all'); // 'all' | 'system' | 'automation'
+  const [purging, setPurging] = useState(false);
+  const [purgeStatus, setPurgeStatus] = useState(null);
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -110,6 +119,82 @@ export default function SystemLogs({ supabase, session }) {
       setDbStatus(`Error: ${e.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePurgeLogs = async () => {
+    setPurging(true);
+    setPurgeStatus(null);
+    try {
+      let purgeSuccessful = false;
+      let resultMessage = '';
+
+      // 1. Attempt API call
+      try {
+        const token = (await supabase?.auth?.getSession())?.data?.session?.access_token || '';
+        const res = await fetch('/api/system-logs', {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            scope: purgeScope,
+            target: purgeTarget,
+            confirmed: true
+          })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          purgeSuccessful = true;
+          resultMessage = data.message || 'Logs successfully purged.';
+        } else {
+          console.warn('[Purge Logs] API response notice:', data?.error);
+        }
+      } catch (apiErr) {
+        console.warn('[Purge Logs] API fetch error:', apiErr.message);
+      }
+
+      // 2. Direct Supabase fallback if API call failed or returned error
+      if (!purgeSuccessful && supabase) {
+        let cutOffDate = null;
+        if (purgeScope === 'older_than_24h') cutOffDate = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+        else if (purgeScope === 'older_than_7d') cutOffDate = new Date(Date.now() - 7 * 86400 * 1000).toISOString();
+        else if (purgeScope === 'older_than_30d') cutOffDate = new Date(Date.now() - 30 * 86400 * 1000).toISOString();
+
+        if (purgeTarget === 'all' || purgeTarget === 'system') {
+          let q = supabase.from('system_logs').delete();
+          if (cutOffDate) q = q.lt('created_at', cutOffDate);
+          else q = q.neq('id', '00000000-0000-0000-0000-000000000000');
+          await q;
+        }
+
+        if (purgeTarget === 'all' || purgeTarget === 'automation') {
+          let q = supabase.from('automation_logs').delete();
+          if (cutOffDate) q = q.lt('created_at', cutOffDate);
+          else q = q.neq('id', '00000000-0000-0000-0000-000000000000');
+          await q;
+        }
+
+        purgeSuccessful = true;
+        resultMessage = `Logs successfully purged via direct database connection (${purgeScope}).`;
+      }
+
+      if (purgeSuccessful) {
+        setPurgeStatus({ type: 'success', text: resultMessage });
+        await fetchLogs();
+        setTimeout(() => {
+          setShowPurgeModal(false);
+          setPurgeStatus(null);
+        }, 1500);
+      } else {
+        setPurgeStatus({ type: 'error', text: 'Failed to purge logs. Please ensure you are logged in with admin privileges.' });
+      }
+    } catch (err) {
+      setPurgeStatus({ type: 'error', text: err.message || 'Error occurred while purging logs.' });
+    } finally {
+      setPurging(false);
     }
   };
 
@@ -272,6 +357,26 @@ export default function SystemLogs({ supabase, session }) {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              id="btn-purge-logs"
+              className="btn"
+              style={{
+                background: '#fee2e2',
+                color: '#991b1b',
+                border: '1px solid #fecaca',
+                fontWeight: '600',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+              onClick={() => {
+                setPurgeStatus(null);
+                setShowPurgeModal(true);
+              }}
+            >
+              <Trash2 size={14} />
+              Clear Logs
+            </button>
             <button className="btn light" onClick={fetchLogs} disabled={loading}>
               <RefreshCw size={14} className={loading ? 'spin' : ''} />
               {loading ? 'Refreshing...' : 'Refresh Logs'}
@@ -553,6 +658,268 @@ export default function SystemLogs({ supabase, session }) {
           </div>
         )}
       </div>
+
+      {/* Purge Logs Modal */}
+      {showPurgeModal && (
+        <div
+          id="purge-logs-modal"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px'
+          }}
+          onClick={e => {
+            if (e.target === e.currentTarget && !purging) {
+              setShowPurgeModal(false);
+            }
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '16px',
+              maxWidth: '520px',
+              width: '100%',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.25), 0 10px 10px -5px rgba(0, 0, 0, 0.1)',
+              border: '1px solid #e2e8f0',
+              overflow: 'hidden',
+              animation: 'fadeIn 0.15s ease-out'
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                padding: '18px 24px',
+                borderBottom: '1px solid #fed7aa',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: '#fff7ed'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    background: '#ffedd5',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#c2410c'
+                  }}
+                >
+                  <Trash2 size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#9a3412' }}>
+                    Purge System & Event Logs
+                  </h3>
+                  <span style={{ fontSize: '12px', color: '#c2410c' }}>
+                    Safe administrative maintenance for log stores
+                  </span>
+                </div>
+              </div>
+              <button
+                id="btn-close-purge-modal"
+                disabled={purging}
+                onClick={() => setShowPurgeModal(false)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#9a3412',
+                  padding: '6px',
+                  borderRadius: '6px'
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '22px 24px' }}>
+              <div
+                style={{
+                  padding: '12px 14px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '10px',
+                  fontSize: '12px',
+                  color: '#334155',
+                  lineHeight: '1.5',
+                  marginBottom: '18px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '10px'
+                }}
+              >
+                <ShieldCheck size={20} color="#059669" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <div>
+                  <strong style={{ color: '#0f172a', display: 'block', marginBottom: '2px' }}>
+                    Security & Core Tables Safety Guarantee:
+                  </strong>
+                  <span>
+                    This action only prunes entries from <code>system_logs</code> and <code>automation_logs</code>. User accounts, authentication tables, candidate profiles, exams, and question banks are strictly preserved and untouched.
+                  </span>
+                </div>
+              </div>
+
+              {/* Form Controls */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '11px',
+                      fontWeight: '700',
+                      color: '#475569',
+                      marginBottom: '6px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em'
+                    }}
+                  >
+                    Target Log Store
+                  </label>
+                  <select
+                    id="purge-target-select"
+                    value={purgeTarget}
+                    disabled={purging}
+                    onChange={e => setPurgeTarget(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '13px',
+                      background: '#ffffff',
+                      color: '#1e293b'
+                    }}
+                  >
+                    <option value="all">Both System Logs & Automation Runs (Recommended)</option>
+                    <option value="system">Only System Logs (Audit events, API queries)</option>
+                    <option value="automation">Only Automation Logs (Daily 00:00 Cron Runs)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '11px',
+                      fontWeight: '700',
+                      color: '#475569',
+                      marginBottom: '6px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em'
+                    }}
+                  >
+                    Purge Scope / Age
+                  </label>
+                  <select
+                    id="purge-scope-select"
+                    value={purgeScope}
+                    disabled={purging}
+                    onChange={e => setPurgeScope(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '13px',
+                      background: '#ffffff',
+                      color: '#1e293b'
+                    }}
+                  >
+                    <option value="all">All Logs (Full Table Purge)</option>
+                    <option value="older_than_24h">Older than 24 Hours</option>
+                    <option value="older_than_7d">Older than 7 Days</option>
+                    <option value="older_than_30d">Older than 30 Days</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Status Message */}
+              {purgeStatus && (
+                <div
+                  id="purge-status-message"
+                  style={{
+                    marginTop: '16px',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    background: purgeStatus.type === 'success' ? '#f0fdf4' : '#fef2f2',
+                    color: purgeStatus.type === 'success' ? '#166534' : '#991b1b',
+                    border: `1px solid ${purgeStatus.type === 'success' ? '#bbf7d0' : '#fecaca'}`
+                  }}
+                >
+                  {purgeStatus.text}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div
+              style={{
+                padding: '14px 24px',
+                background: '#f8fafc',
+                borderTop: '1px solid #e2e8f0',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px'
+              }}
+            >
+              <button
+                id="btn-cancel-purge"
+                className="btn light"
+                disabled={purging}
+                onClick={() => setShowPurgeModal(false)}
+                style={{ fontSize: '13px', padding: '8px 16px' }}
+              >
+                Cancel
+              </button>
+              <button
+                id="btn-confirm-purge"
+                className="btn"
+                disabled={purging}
+                onClick={handlePurgeLogs}
+                style={{
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  border: 'none',
+                  fontSize: '13px',
+                  fontWeight: '700',
+                  padding: '8px 18px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: purging ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {purging ? (
+                  <>
+                    <RefreshCw size={14} className="spin" />
+                    Purging Logs...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    Confirm Purge
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -12,7 +12,12 @@ import {
   cleanJsonParse,
   handleCorsAndOptions,
   resolveOptionDuplicatesAndDistribute,
-  fixDuplicateOptions
+  fixDuplicateOptions,
+  sanitizeObject,
+  sanitizeString,
+  sanitizeErrorResponse,
+  checkRateLimit,
+  getClientIp
 } from './_shared.js';
 import syncCurrentAffairsHandler from './sync-current-affairs.js';
 import mockGeneratorHandler from './mock-generator.js';
@@ -263,6 +268,19 @@ export default async function handler(req, res) {
     return;
   }
   const isInternalCall = typeof req === 'string' || req?.isInternal;
+
+  // Rate limiting on external triggers to protect against denial of service
+  if (!isInternalCall) {
+    const ip = getClientIp(req);
+    const rate = checkRateLimit(ip, 'daily-scheduler', 10, 60000);
+    if (!rate.allowed) {
+      if (res && typeof res.setHeader === 'function') {
+        res.setHeader('Retry-After', String(rate.retryAfter));
+      }
+      return res ? res.status(429).json({ ok: false, error: 'Too many requests. Please wait before triggering the daily scheduler.' }) : { ok: false, error: 'Rate limit exceeded' };
+    }
+  }
+
   const todayStr = getKolkataDateString();
   const timeStr = getKolkataTimeString();
   const jobKey = `daily_pipeline_${todayStr}_kolkata`;
@@ -308,23 +326,24 @@ export default async function handler(req, res) {
     }
 
     // Support override target / test options if passed
-    const isDryRun = Boolean(req?.body?.dryRun);
-    const effectiveTarget = Number(req?.body?.target || config.daily_question_target || 1000);
-    const forceAiReview = req?.body?.forceAiReview === true;
-    const integrityTestMode = req?.body?.testMode === true;
+    const rawBody = req?.body || {};
+    const body = sanitizeObject(rawBody);
+    const effectiveTarget = Math.min(Math.max(Number(body?.target || config.daily_question_target || 1000), 1), 2000);
+    const forceAiReview = body?.forceAiReview === true;
+    const integrityTestMode = body?.testMode === true;
     const retryOptions = {
       testMode: integrityTestMode,
       initialDelayMs: integrityTestMode ? 15 : 1000,
       timeoutMs: integrityTestMode ? 5000 : 20000,
       maxRetries: 3,
-      silent: req?.body?.silent === true || integrityTestMode
+      silent: body?.silent === true || integrityTestMode
     };
-    const allowTestGemini = integrityTestMode && Boolean(req?.geminiClient || req?.body?.geminiClient);
-    const isAiConfigured = (allowTestGemini || !integrityTestMode) && (process.env.GEMINI_AI_ENABLED === 'true' || config.gemini_ai_enabled === true || req?.body?.gemini_ai_enabled === true || req?.body?.enableAi === true || forceAiReview);
-    const gemini = req?.geminiClient || req?.body?.geminiClient || (isAiConfigured ? getGeminiClient() : null);
-    const isAiActive = Boolean((isAiConfigured || req?.geminiClient || req?.body?.geminiClient) && gemini);
+    const allowTestGemini = integrityTestMode && Boolean(req?.geminiClient || body?.geminiClient);
+    const isAiConfigured = (allowTestGemini || !integrityTestMode) && (process.env.GEMINI_AI_ENABLED === 'true' || config.gemini_ai_enabled === true || body?.gemini_ai_enabled === true || body?.enableAi === true || forceAiReview);
+    const gemini = req?.geminiClient || body?.geminiClient || (isAiConfigured ? getGeminiClient() : null);
+    const isAiActive = Boolean((isAiConfigured || req?.geminiClient || body?.geminiClient) && gemini);
 
-    if (!config.daily_automation_enabled && !req?.body?.force && !isDryRun) {
+    if (!config.daily_automation_enabled && !body?.force && !isDryRun) {
       const resp = { ok: true, skipped: true, reason: 'Daily automation is paused by admin setting' };
       return res ? res.status(200).json(resp) : resp;
     }
@@ -340,7 +359,7 @@ export default async function handler(req, res) {
       existingJob = data;
     }
 
-    if (existingJob && existingJob.status === 'completed' && !req?.body?.force && !isDryRun) {
+    if (existingJob && existingJob.status === 'completed' && !body?.force && !isDryRun) {
       const resp = {
         ok: true,
         idempotent: true,
@@ -781,7 +800,7 @@ export default async function handler(req, res) {
 
     return res ? res.status(200).json(resultPayload) : resultPayload;
   } catch (err) {
-    const errorMsg = err?.message || String(err);
+    const errorMsg = sanitizeString(err?.message || String(err), 300);
     console.error('[Daily Scheduler Failure]:', errorMsg);
 
     if (sb) {
@@ -799,15 +818,15 @@ export default async function handler(req, res) {
           level: 'error',
           source: 'daily-scheduler',
           action: 'execution-failed',
-          message: `Daily scheduler failed for ${todayStr}: ${errorMsg}`,
-          details: { job_key: jobKey, stack: err?.stack }
+          message: sanitizeString(`Daily scheduler failed for ${todayStr}: ${errorMsg}`, 500),
+          details: { job_key: jobKey }
         });
       } catch (logErr) {
         console.error('Failed to log failure into database:', logErr);
       }
     }
 
-    const errPayload = { ok: false, error: errorMsg, job_key: jobKey };
+    const errPayload = { ok: false, error: sanitizeErrorResponse(err, 'Daily scheduler failed'), job_key: jobKey };
     return res ? res.status(500).json(errPayload) : errPayload;
   }
 }

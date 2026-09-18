@@ -1,4 +1,14 @@
-import { getSupabaseAdmin, verifyAdminAuth, withApiLogging } from './_shared.js';
+import {
+  getSupabaseAdmin,
+  verifyAdminAuth,
+  withApiLogging,
+  isValidUuid,
+  sanitizeObject,
+  sanitizeErrorResponse,
+  checkRateLimit,
+  getClientIp,
+  isSuperOrAdminRole
+} from './_shared.js';
 
 /**
  * Permanent Data Deletion & Database Cleanup API Handler
@@ -11,12 +21,25 @@ import { getSupabaseAdmin, verifyAdminAuth, withApiLogging } from './_shared.js'
  * 5. Historical Automation & System Logs (automation_logs + system_logs)
  * 
  * Safety:
- * - Requires verified admin authentication.
+ * - Autonomous rate limiting to defend against denial-of-service attempts.
+ * - Requires verified Super Admin or Admin authorization for destructive purges.
  * - Explicitly unlinks foreign key references before deleting parent records.
+ * - Strict UUID validation on exam_id parameter.
+ * - Error sanitization to shield PostgreSQL internals.
  * - Logs all deletion activities to system_logs for permanent audit trail.
  */
 async function handler(req, res) {
   const method = req.method;
+
+  // 1. Rate Limiting Check
+  const ip = getClientIp(req);
+  const rate = checkRateLimit(ip, 'admin-cleanup', 20, 60000);
+  if (!rate.allowed) {
+    if (res && typeof res.setHeader === 'function') {
+      res.setHeader('Retry-After', String(rate.retryAfter));
+    }
+    return res.status(429).json({ error: 'Too many requests. Please slow down and try again shortly.' });
+  }
 
   const sb = getSupabaseAdmin(req);
   if (!sb) {
@@ -28,6 +51,9 @@ async function handler(req, res) {
   if (!auth.ok) {
     return res.status(auth.statusCode || 401).json({ error: auth.error });
   }
+
+  // RBAC: Destructive modifications require Super Admin or Admin role
+  const isSuperOrAdmin = isSuperOrAdminRole(auth);
 
   // GET: Fetch live counts and list of mock tests for the cleanup dashboard
   if (method === 'GET') {
@@ -67,13 +93,19 @@ async function handler(req, res) {
       });
     } catch (err) {
       console.error('[Admin Cleanup GET Error]:', err);
-      return res.status(500).json({ error: err.message || 'Failed to fetch database cleanup counts' });
+      return res.status(500).json({ error: sanitizeErrorResponse(err, 'Failed to fetch database cleanup counts') });
     }
   }
 
   // POST: Execute safe permanent deletion
   if (method === 'POST') {
-    const { target, scope = 'all', exam_id = null, confirmed = false } = req.body || {};
+    // RBAC: Non-admin staff cannot trigger permanent database purges
+    if (!isSuperOrAdmin) {
+      return res.status(403).json({ error: 'Access denied: Admin or Super Admin role required for permanent database cleanup.' });
+    }
+
+    const cleanBody = sanitizeObject(req.body || {});
+    const { target, scope = 'all', exam_id = null, confirmed = false } = cleanBody;
 
     if (!confirmed) {
       return res.status(400).json({
@@ -81,9 +113,24 @@ async function handler(req, res) {
       });
     }
 
-    if (!target) {
+    const allowedTargets = ['mock_tests', 'test_runs', 'unwanted_questions', 'all_questions', 'logs'];
+    if (!target || !allowedTargets.includes(target)) {
       return res.status(400).json({
-        error: 'Target dataset is required (target: "mock_tests" | "test_runs" | "unwanted_questions" | "all_questions" | "logs")'
+        error: `Target dataset is required and must be one of: ${allowedTargets.join(', ')}`
+      });
+    }
+
+    const allowedScopes = ['all', 'draft', 'older_than_30d', 'older_than_7d'];
+    if (scope && !allowedScopes.includes(scope)) {
+      return res.status(400).json({
+        error: `Scope must be one of: ${allowedScopes.join(', ')}`
+      });
+    }
+
+    // Input Validation: Validate exam_id format if provided
+    if (exam_id && !isValidUuid(exam_id)) {
+      return res.status(400).json({
+        error: 'Invalid exam_id format. Must be a valid UUID.'
       });
     }
 
@@ -261,7 +308,7 @@ async function handler(req, res) {
     } catch (delError) {
       console.error('[Admin Cleanup Execution Error]:', delError);
       return res.status(500).json({
-        error: delError.message || 'Failed to execute permanent data cleanup'
+        error: sanitizeErrorResponse(delError, 'Failed to execute permanent data cleanup.')
       });
     }
   }

@@ -302,6 +302,59 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
               error = me;
             }
           }
+
+          // Safety net: If no questions were mapped to this exam yet, auto-query matching approved questions
+          if ((!data || data.length === 0) && supabase) {
+            try {
+              const targetSubject = exam.subject || (
+                String(exam.title || '').toLowerCase().includes('reasoning') ? 'Reasoning' :
+                String(exam.title || '').toLowerCase().includes('math') ? 'Mathematics' :
+                String(exam.title || '').toLowerCase().includes('banking') ? 'Banking Awareness' :
+                String(exam.title || '').toLowerCase().includes('current affairs') ? 'Current Affairs' :
+                String(exam.title || '').toLowerCase().includes('computer') ? 'Computer' :
+                String(exam.title || '').toLowerCase().includes('general awareness') ? 'General Awareness' :
+                null
+              );
+
+              const { data: poolQs } = await supabase
+                .from('questions')
+                .select(
+                  'id,question,option_a,option_b,option_c,option_d,correct_answer,explanation,question_hi,option_a_hi,option_b_hi,option_c_hi,option_d_hi,explanation_hi,language,subject,topic,difficulty,exam'
+                )
+                .eq('status', 'approved')
+                .order('created_at', { ascending: false })
+                .limit(effectiveLimit * 3);
+
+              if (poolQs?.length) {
+                const validPool = poolQs.filter(q => {
+                  const ans = cleanAnswer(q.correct_answer, q);
+                  return /^[ABCD]$/.test(ans) && q.option_a && q.option_b && q.option_c && q.option_d && !isDependentContextMissing(q.question);
+                });
+
+                let selected = [];
+                if (targetSubject) {
+                  selected = validPool.filter(q => String(q.subject || '').toLowerCase() === targetSubject.toLowerCase());
+                }
+                if (selected.length < effectiveLimit) {
+                  const other = validPool.filter(q => !selected.some(s => s.id === q.id));
+                  selected = [...selected, ...other].slice(0, effectiveLimit);
+                } else {
+                  selected = selected.slice(0, effectiveLimit);
+                }
+
+                if (selected.length > 0) {
+                  data = selected;
+                  // Asynchronously persist mappings to database so future loads are pre-cached
+                  const toInsert = selected.map((q, idx) => ({
+                    exam_id: exam.id,
+                    question_id: q.id,
+                    question_order: idx + 1
+                  }));
+                  supabase.from('exam_questions').insert(toInsert).catch(() => {});
+                }
+              }
+            } catch (_) {}
+          }
         } else {
           // Subject Practice must use the administrator's database configuration.
           // Never fall back to hardcoded 25 questions / 25 minutes.

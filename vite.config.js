@@ -37,7 +37,7 @@ function apiMiddlewarePlugin() {
     configureServer(server) {
       // 00:00 Asia/Kolkata server-side in-process scheduler
       let lastRanDate = '';
-      setInterval(async () => {
+      const cronTimer = setInterval(async () => {
         try {
           const kolkataFormatter = new Intl.DateTimeFormat('en-CA', {
             timeZone: 'Asia/Kolkata',
@@ -65,6 +65,9 @@ function apiMiddlewarePlugin() {
           console.warn('[00:00 Scheduler Check Error]:', e.message);
         }
       }, 30000); // Check every 30 seconds
+      if (typeof cronTimer?.unref === 'function') {
+        cronTimer.unref();
+      }
 
       server.middlewares.use(async (req, res, next) => {
         const parsedUrl = new URL(req.url, 'http://localhost');
@@ -73,8 +76,26 @@ function apiMiddlewarePlugin() {
 
         if (handler) {
           let bodyData = '';
-          req.on('data', chunk => { bodyData += chunk; });
+          let bodyLength = 0;
+          const MAX_BODY_BYTES = 5 * 1024 * 1024; // 5MB strict payload ceiling
+          let payloadTooLarge = false;
+
+          req.on('data', chunk => {
+            bodyLength += chunk.length;
+            if (bodyLength > MAX_BODY_BYTES) {
+              payloadTooLarge = true;
+              req.destroy();
+              res.statusCode = 413;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: 'Payload Too Large. Maximum allowed size is 5MB.' }));
+              return;
+            }
+            bodyData += chunk;
+          });
+
           req.on('end', async () => {
+            if (payloadTooLarge) return;
+
             try {
               req.body = bodyData ? JSON.parse(bodyData) : {};
             } catch (_) {
@@ -108,8 +129,8 @@ function apiMiddlewarePlugin() {
             try {
               await handler(req, mockRes);
             } catch (err) {
-              console.error(`API error on ${pathname}:`, err);
-              mockRes.status(500).json({ error: err.message || 'Internal Server Error' });
+              console.error(`API error on ${pathname}:`, err?.message);
+              mockRes.status(500).json({ error: 'An internal server error occurred while processing your request.' });
             }
           });
           return;

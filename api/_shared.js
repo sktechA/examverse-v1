@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
 import url from 'node:url';
+import crypto from 'node:crypto';
 
 // 1. Monkey-patch legacy url.parse using the WHATWG URL standard to eliminate [DEP0169] DeprecationWarning
 if (typeof url.parse === 'function') {
@@ -441,6 +442,157 @@ export function getNormalizedGeminiModel(rawModel) {
 }
 
 /**
+ * Security, Sanitization & Autonomous Defense Utilities
+ */
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+export function isValidUuid(val) {
+  return typeof val === 'string' && UUID_REGEX.test(val.trim());
+}
+
+export function isValidEmail(email) {
+  if (typeof email !== 'string') return false;
+  const trimmed = email.trim();
+  return trimmed.length >= 5 && trimmed.length <= 254 && EMAIL_REGEX.test(trimmed);
+}
+
+export function sanitizeString(val, maxLength = 1000) {
+  if (val === null || val === undefined) return '';
+  let s = String(val).replace(/\0/g, ''); // Strip null-byte injection
+  // Strip dangerous script tags / event handlers / javascript: pseudo-protocols
+  s = s.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+  s = s.replace(/javascript\s*:/gi, '');
+  s = s.replace(/on\w+\s*=\s*["'][^"']*["']/gi, '');
+  return s.trim().slice(0, maxLength);
+}
+
+/**
+ * Strips prototype pollution keys (__proto__, constructor, prototype) recursively
+ */
+export function sanitizeObject(obj, depth = 0) {
+  if (!obj || typeof obj !== 'object' || depth > 6) return obj;
+  if (Array.isArray(obj)) {
+    return obj.slice(0, 2000).map(item => sanitizeObject(item, depth + 1));
+  }
+  const clean = Object.create(null);
+  for (const [key, value] of Object.entries(obj)) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      continue; // Block prototype pollution vectors
+    }
+    if (typeof value === 'object' && value !== null) {
+      clean[key] = sanitizeObject(value, depth + 1);
+    } else if (typeof value === 'string') {
+      clean[key] = value.replace(/\0/g, '');
+    } else {
+      clean[key] = value;
+    }
+  }
+  return { ...clean };
+}
+
+/**
+ * Constant-time string comparison to prevent side-channel timing attacks
+ */
+export function timingSafeCompare(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  if (bufA.length === 0 || bufB.length === 0 || bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+/**
+ * Extracts normalized client IP address from request headers
+ */
+export function getClientIp(req) {
+  if (!req) return '127.0.0.1';
+  const xForwardedFor = req.headers?.['x-forwarded-for'];
+  if (xForwardedFor) {
+    const firstIp = String(xForwardedFor).split(',')[0].trim();
+    if (firstIp) return firstIp;
+  }
+  const realIp = req.headers?.['x-real-ip'];
+  if (realIp) return String(realIp).trim();
+  const remoteAddr = req.socket?.remoteAddress || req.connection?.remoteAddress;
+  if (remoteAddr) {
+    if (remoteAddr === '::1' || remoteAddr === '::ffff:127.0.0.1') return '127.0.0.1';
+    return String(remoteAddr).trim();
+  }
+  return '127.0.0.1';
+}
+
+/**
+ * In-memory sliding-window Token Bucket Rate Limiter
+ * Autonomously defends against volumetric flooding and brute-force attacks.
+ */
+const rateLimitStore = new Map();
+
+// Periodic prune to prevent memory leaks
+if (typeof setInterval === 'function') {
+  const timer = setInterval(() => {
+    const now = Date.now();
+    for (const [key, record] of rateLimitStore.entries()) {
+      if (now > record.resetTime + 30000) {
+        rateLimitStore.delete(key);
+      }
+    }
+  }, 120000);
+  if (typeof timer?.unref === 'function') {
+    timer.unref();
+  }
+}
+
+export function checkRateLimit(ip = '127.0.0.1', bucket = 'global', maxRequests = 120, windowMs = 60000) {
+  const now = Date.now();
+  const key = `${bucket}:${ip}`;
+  let record = rateLimitStore.get(key);
+  if (!record || now > record.resetTime) {
+    record = { count: 1, resetTime: now + windowMs };
+    rateLimitStore.set(key, record);
+    return { allowed: true, remaining: maxRequests - 1, retryAfter: 0 };
+  }
+  record.count++;
+  if (record.count > maxRequests) {
+    const retryAfter = Math.max(1, Math.ceil((record.resetTime - now) / 1000));
+    return { allowed: false, remaining: 0, retryAfter };
+  }
+  return { allowed: true, remaining: maxRequests - record.count, retryAfter: 0 };
+}
+
+/**
+ * Sanitizes and shields error messages returned to clients.
+ * Prevents internal PostgreSQL schemas, constraint names, stack traces, and tokens from leaking.
+ */
+export function sanitizeErrorResponse(err, defaultMessage = 'An internal processing error occurred. Please try again later.') {
+  if (!err) return defaultMessage;
+  const raw = typeof err === 'string' ? err : (err.message || String(err));
+  
+  // Detect database schema exposure, stack traces, or secret leaks
+  const isSensitive = /relation\s+["']|column\s+["']|syntax error at|foreign key constraint|password|secret|key=|bearer|pg_|postgresql|auth\.users|stack|at\s+\S+\s+\(/i.test(raw);
+  if (isSensitive) {
+    return defaultMessage;
+  }
+  // Strip multi-line messages, file system paths, or node_modules
+  if (raw.includes('\n') || raw.includes('/app/') || raw.includes('node_modules')) {
+    return defaultMessage;
+  }
+  return raw.slice(0, 180);
+}
+
+/**
+ * Verifies whether an authenticated context has full admin privileges (super_admin, admin, or system owner).
+ */
+export function isSuperOrAdminRole(auth) {
+  if (!auth || !auth.ok) return false;
+  if (auth.isInternal || auth.role === 'cron') return true;
+  if (auth.role === 'admin' || auth.role === 'super_admin') return true;
+  if (auth.user?.email && auth.user.email.toLowerCase() === 'skt22tripathi@gmail.com') return true;
+  return false;
+}
+
+/**
  * Server-side Admin Authorization Check
  * Protects admin endpoints from public unauthenticated access.
  * Checks Bearer token against Supabase auth and profile role, or CRON_SECRET for scheduler calls.
@@ -455,10 +607,13 @@ export async function verifyAdminAuth(req, sb) {
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
   const querySecret = req?.query?.secret || req?.body?.cron_secret;
 
-  // Verify CRON_SECRET if configured and provided
-  const configuredCronSecret = process.env.CRON_SECRET;
-  if (configuredCronSecret) {
-    if (token === configuredCronSecret || querySecret === configuredCronSecret) {
+  // Verify CRON_SECRET if configured and provided using timing-safe comparison
+  const configuredCronSecret = (process.env.CRON_SECRET || '').trim();
+  if (configuredCronSecret.length >= 8) {
+    if (token && timingSafeCompare(token, configuredCronSecret)) {
+      return { ok: true, isCron: true, role: 'cron' };
+    }
+    if (querySecret && timingSafeCompare(String(querySecret), configuredCronSecret)) {
       return { ok: true, isCron: true, role: 'cron' };
     }
   }
@@ -527,12 +682,12 @@ export async function verifyAdminAuth(req, sb) {
       };
     }
 
-    return { ok: true, user, role: profile?.role || 'admin' };
+    return { ok: true, user, role: profile?.role || (isSuperAdminEmail ? 'super_admin' : 'admin') };
   } catch (err) {
     return {
       ok: false,
       statusCode: 500,
-      error: err.message || 'Authorization verification error'
+      error: 'Authorization verification service error'
     };
   }
 }
@@ -543,6 +698,71 @@ export function normalizeText(s = '') {
     .replace(/\s+/g, ' ')
     .replace(/[^\p{L}\p{N}\s]/gu, '')
     .trim();
+}
+
+/**
+ * Normalizes option values for strict duplication checks.
+ * Equates numeric variants (e.g. .1, 0.1, 0.10, +.1, Rs. .1 vs Rs. 0.1, 10% vs 10 %)
+ * and textual equivalents while preserving semantically distinct values.
+ */
+export function normalizeOptionValue(v) {
+  if (v === null || v === undefined) return '';
+  const s = String(v).trim();
+  if (!s) return '';
+
+  const clean = s
+    .toLowerCase()
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Fraction check: 1/2, 3/4, etc.
+  const fracMatch = clean.match(/^([+-]?\d+)\s*\/\s*(\d+)$/);
+  if (fracMatch) {
+    const num = parseFloat(fracMatch[1]);
+    const den = parseFloat(fracMatch[2]);
+    if (den !== 0) {
+      const val = num / den;
+      return 'num::' + (Math.abs(val) < 1e-12 ? 0 : val.toFixed(6).replace(/\.?0+$/, '')) + ':';
+    }
+  }
+
+  // Numeric check with optional currency prefix and unit/percent suffix
+  // Supports: .1, 0.1, 0.10, +.1, -.1, Rs. .1, Rs. 0.1, 10%, 10 %, 1.0, 1, etc.
+  const numMatch = clean.match(/^(.*?)([+-]?(?:\d+(?:\.\d+)?|\.\d+))([^0-9.]*)$/);
+  if (numMatch) {
+    let rawPrefix = numMatch[1].replace(/[^a-z\u0900-\u097F₹]/g, '').trim();
+    const rawVal = parseFloat(numMatch[2]);
+    let rawSuffix = numMatch[3].replace(/[^a-z%/\u0900-\u097F₹]/g, '').trim();
+    if (!isNaN(rawVal)) {
+      if (/^(rs|inr|rupee|rupees|₹|रु|रुपये|रू)$/i.test(rawPrefix)) rawPrefix = 'curr';
+      if (/^(rs|inr|rupee|rupees|₹|रु|रुपये|रू)$/i.test(rawSuffix)) rawSuffix = 'curr';
+      const roundedVal = Math.abs(rawVal) < 1e-12 ? 0 : parseFloat(rawVal.toFixed(8));
+      return 'num:' + rawPrefix + ':' + roundedVal + ':' + rawSuffix;
+    }
+  }
+
+  // Text normalizer
+  const textNorm = clean
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return 'str:' + textNorm;
+}
+
+/**
+ * Evaluates whether two option values are duplicate or semantically identical.
+ */
+export function areOptionsDuplicate(opt1, opt2) {
+  if (opt1 === opt2) return true;
+  const k1 = normalizeOptionValue(opt1);
+  const k2 = normalizeOptionValue(opt2);
+  if (k1 && k2 && k1 === k2) return true;
+  const t1 = normalizeText(opt1);
+  const t2 = normalizeText(opt2);
+  if (t1 && t2 && t1 === t2) return true;
+  return false;
 }
 
 export function cleanAnswer(v = '', options = null) {
@@ -575,11 +795,22 @@ export function cleanAnswer(v = '', options = null) {
   // 5. If options map or record is provided, check if string matches option text
   if (options && typeof options === 'object') {
     const normVal = s.toLowerCase().trim();
+    // 5a. Exact match or normalized numeric/value equivalence first
     for (const letter of ['A', 'B', 'C', 'D']) {
       const key = `option_${letter.toLowerCase()}`;
       const optVal = String(options[key] || options[letter] || '').toLowerCase().trim();
-      if (optVal && (normVal === optVal || normVal.startsWith(optVal) || optVal.startsWith(normVal))) {
+      if (optVal && (normVal === optVal || areOptionsDuplicate(normVal, optVal))) {
         return letter;
+      }
+    }
+    // 5b. Prefix match only if option length is substantial (>= 4 chars) to prevent '1' matching '1.1'
+    if (normVal.length >= 4) {
+      for (const letter of ['A', 'B', 'C', 'D']) {
+        const key = `option_${letter.toLowerCase()}`;
+        const optVal = String(options[key] || options[letter] || '').toLowerCase().trim();
+        if (optVal && optVal.length >= 4 && (normVal.startsWith(optVal) || optVal.startsWith(normVal))) {
+          return letter;
+        }
       }
     }
   }
@@ -735,26 +966,84 @@ export function isSubjectStrictMatch(qSubject = '', targetSubject = '') {
   if (normT === 'reasoning') {
     const mathKeywords = ['mathematics', 'quant', 'arithmetic', 'simplification', 'profit & loss', 'ratio', 'simple interest', 'percentage'];
     if (mathKeywords.some(kw => normQ.includes(kw))) return false;
-    return ['logical reasoning', 'general intelligence'].includes(normQ);
+    return ['logical reasoning', 'general intelligence', 'puzzle', 'puzzles'].includes(normQ);
+  }
+
+  if (normT === 'banking awareness' || normT === 'banking') {
+    return ['banking', 'banking & financial awareness', 'financial awareness', 'bank awareness', 'banking awareness'].includes(normQ) || normQ.includes('banking');
+  }
+
+  if (normT === 'general awareness' || normT === 'gk') {
+    return ['gk', 'general knowledge', 'general studies', 'ga', 'static gk', 'general awareness'].includes(normQ) || normQ.includes('general awareness');
+  }
+
+  if (normT === 'current affairs') {
+    return ['daily current affairs', 'ca', 'current affairs 2025', 'current affairs 2024', 'current affairs'].includes(normQ) || normQ.includes('current affairs');
+  }
+
+  if (normT === 'computer' || normT === 'computer knowledge') {
+    return ['computer knowledge', 'computer awareness', 'computer science', 'it', 'computer'].includes(normQ) || normQ.includes('computer');
+  }
+
+  if (normT === 'english') {
+    return ['english language', 'general english', 'english'].includes(normQ) || normQ.includes('english');
+  }
+
+  if (normT === 'hindi') {
+    return ['hindi language', 'general hindi', 'hindi'].includes(normQ) || normQ.includes('hindi');
+  }
+
+  if (normT === 'civil engineering') {
+    return ['civil', 'civil engg', 'civil engineering'].includes(normQ) || normQ.includes('civil');
+  }
+
+  if (normT === 'electrical engineering') {
+    return ['electrical', 'electrical engg', 'electrical engineering'].includes(normQ) || normQ.includes('electrical');
+  }
+
+  if (normT === 'mechanical engineering') {
+    return ['mechanical', 'mechanical engg', 'mechanical engineering'].includes(normQ) || normQ.includes('mechanical');
   }
 
   return false;
 }
 
 /**
+ * Global round-robin index for uniform option distribution without bias.
+ */
+let globalDistributionIndex = 0;
+
+/**
+ * Standard Hindi translations for common fallback distractors.
+ */
+const HINDI_DISTRACTOR_MAP = {
+  'None of the above': 'उपरोक्त में से कोई नहीं',
+  'Cannot be determined': 'निर्धारित नहीं किया जा सकता',
+  'Both A and B': 'A और B दोनों',
+  'Neither A nor B': 'न तो A और न ही B',
+  'Data insufficient': 'आंकड़े अपर्याप्त हैं',
+  'Information insufficient': 'सूचना अपर्याप्त है',
+  'Partially correct': 'आंशिक रूप से सही',
+  'All of the above': 'उपरोक्त सभी',
+  'Either 1 or 2': 'या तो 1 या 2'
+};
+
+/**
  * Distractor Fixer & Distinct Option Remapper
- * Detects duplicate options across A, B, C, D.
+ * Detects duplicate options across A, B, C, D (including numeric formats like .1 vs 0.1).
  * If any distractor option duplicates an existing option, it automatically generates
- * a distinct, plausible replacement distractor (e.g. if Option B is '1' and Option C is '1',
- * Option C is remapped to a unique distinct value such as '6').
- * Crucially preserves the correct answer's exact text and meaning.
+ * a distinct, plausible replacement distractor.
+ * Crucially:
+ * 1. Strictly prevents duplicate option values (e.g. .1 vs 0.1, Rs. .1 vs Rs. 0.1).
+ * 2. Strictly prevents repeating .1 or identical decimal distractor patterns across options.
+ * 3. Preserves the correct answer's exact text, meaning, and declared value.
  */
 export function fixDuplicateOptions(questionObj) {
   if (!questionObj || typeof questionObj !== 'object') return questionObj;
 
   const letters = ['A', 'B', 'C', 'D'];
-  const originalAns = cleanAnswer(questionObj.correct_answer);
-  const targetAnsLetter = ['A', 'B', 'C', 'D'].includes(originalAns) ? originalAns : 'A';
+  const originalAns = cleanAnswer(questionObj.correct_answer, questionObj);
+  const targetAnsLetter = letters.includes(originalAns) ? originalAns : 'A';
 
   // Extract raw option strings
   const rawOptions = {
@@ -773,127 +1062,206 @@ export function fixDuplicateOptions(questionObj) {
 
   const correctText = rawOptions[targetAnsLetter] || '';
 
-  // Helper: check if duplicate exists
-  const normalizedSet = new Set();
+  // Helper to check if a value has fractional part .1 (e.g. .1, 0.1, 1.1, 2.1)
+  function hasPointOneFraction(str) {
+    const match = String(str || '').match(/([+-]?(?:\d+(?:\.\d+)?|\.\d+))/);
+    if (!match) return false;
+    const num = Math.abs(parseFloat(match[1]));
+    return !isNaN(num) && Math.abs((num % 1) - 0.1) < 1e-3;
+  }
+
+  // Check if any duplicates exist using both normalizeText and normalizeOptionValue,
+  // or if multiple options redundantly repeat .1
+  const normTextSet = new Set();
+  const optValSet = new Set();
   let hasDuplicate = false;
+  let pointOneCount = 0;
+
   for (const letter of letters) {
     const val = rawOptions[letter];
-    if (!val) continue;
-    const norm = normalizeText(val);
-    if (normalizedSet.has(norm)) {
+    if (!val) {
+      hasDuplicate = true;
+      continue;
+    }
+    const nt = normalizeText(val);
+    const ov = normalizeOptionValue(val);
+    if (normTextSet.has(nt) || optValSet.has(ov)) {
       hasDuplicate = true;
       break;
     }
-    normalizedSet.add(norm);
+    if (hasPointOneFraction(val)) {
+      pointOneCount++;
+      if (pointOneCount > 1) {
+        hasDuplicate = true;
+        break;
+      }
+    }
+    normTextSet.add(nt);
+    optValSet.add(ov);
   }
 
-  // If already 4 distinct non-empty options, return original unmodified
+  // If already 4 completely distinct options, return as is
   if (!hasDuplicate && letters.every(l => Boolean(rawOptions[l]))) {
     return questionObj;
   }
 
-  // We need to resolve duplicate distractors while strictly protecting the correct answer option!
+  // Tracking sets for unique values
   const usedNormalized = new Set();
+  const usedOptionValues = new Set();
   const usedRawValues = new Set();
+  let seenPointOne = hasPointOneFraction(correctText);
 
-  // 1. Lock the correct answer option first
   const fixedOptions = { ...rawOptions };
   const fixedOptionsHi = { ...rawOptionsHi };
 
+  // Always protect and register the correct answer first
   if (correctText) {
     usedNormalized.add(normalizeText(correctText));
+    usedOptionValues.add(normalizeOptionValue(correctText));
     usedRawValues.add(correctText.toLowerCase());
   }
 
-  // Detect numeric pattern if options are mostly numbers
+  // Detect whether options are predominantly numeric
   const numericValues = [];
-  let prefix = '';
-  let suffix = '';
+  let detectedPrefix = '';
+  let detectedSuffix = '';
 
   for (const letter of letters) {
     const text = rawOptions[letter];
-    const match = text.match(/^([^\d\-+.]*?)([+-]?\d+(?:\.\d+)?)([^\d.]*?)$/);
+    const match = text.match(/^(.*?)([+-]?(?:\d+(?:\.\d+)?|\.\d+))([^0-9.]*)$/);
     if (match) {
       const num = parseFloat(match[2]);
       if (!isNaN(num)) {
         numericValues.push(num);
-        if (!prefix && match[1]) prefix = match[1];
-        if (!suffix && match[3]) suffix = match[3];
+        if (!detectedPrefix && match[1]) detectedPrefix = match[1];
+        if (!detectedSuffix && match[3]) detectedSuffix = match[3];
       }
     }
   }
 
-  const isPredominantlyNumeric = numericValues.length >= 2;
+  const isPredominantlyNumeric = numericValues.length >= 1;
   const existingNumbers = new Set(numericValues);
 
+  /**
+   * Generates a unique numeric distractor candidate.
+   * Strictly prevents repeating .1 or identical decimal distractor patterns.
+   */
   function getUniqueNumericDistractor() {
-    const maxVal = existingNumbers.size ? Math.max(...existingNumbers) : 10;
-    const minVal = existingNumbers.size ? Math.min(...existingNumbers) : 1;
-    // Step size based on values
-    const step = maxVal > 50 ? 5 : (maxVal > 10 ? 2 : 1);
-    
-    // Candidates derived from existing numbers
+    const nums = Array.from(existingNumbers);
+    const maxVal = nums.length ? Math.max(...nums) : 10;
+    const minVal = nums.length ? Math.min(...nums) : 1;
+    const hasDecimals = nums.some(n => Math.abs(n % 1) > 1e-4);
+    const endsInPointOne = nums.some(n => Math.abs((Math.abs(n) % 1) - 0.1) < 1e-3);
+
     const candidates = [];
-    for (const num of [...existingNumbers]) {
-      candidates.push(num + step);
-      candidates.push(num + step * 2);
-      candidates.push(num + step * 3);
-      if (num - step > 0) candidates.push(num - step);
-      if (num - step * 2 > 0) candidates.push(num - step * 2);
-      candidates.push(num * 2);
-      candidates.push(num + 5);
-      candidates.push(num + 6);
+
+    if (hasDecimals) {
+      // For decimal options (e.g. 0.1, 1.1, 3.15)
+      for (const num of nums) {
+        const intBase = Math.floor(num);
+        // Varied fractions to strictly avoid repeating .1
+        const variedFractions = [0.2, 0.5, 0.25, 0.75, 0.05, 0.4, 0.8, 0.01, 0.6, 0.9, 0.15];
+        for (const frac of variedFractions) {
+          if (endsInPointOne && Math.abs(frac - 0.1) < 1e-3) continue;
+          if (intBase + frac > 0) candidates.push(intBase + frac);
+          if (intBase > 0 && intBase - 1 + frac > 0) candidates.push(intBase - 1 + frac);
+          candidates.push(intBase + 1 + frac);
+          candidates.push(intBase + 2 + frac);
+        }
+        candidates.push(num * 2);
+        candidates.push(num * 0.5);
+        candidates.push(num * 10);
+        candidates.push(num * 0.1);
+        candidates.push(num * 4);
+        candidates.push(intBase > 0 ? intBase : 1);
+        candidates.push(intBase + 1);
+        candidates.push(intBase + 2);
+        candidates.push(intBase + 5);
+      }
+    } else {
+      // Pure integer options (e.g. 0, 1, 4, 10, 50)
+      const step = maxVal > 50 ? 5 : (maxVal > 10 ? 2 : 1);
+      for (const num of nums) {
+        candidates.push(num + step);
+        candidates.push(num + step * 2);
+        candidates.push(num + step * 3);
+        if (num - step >= 0) candidates.push(num - step);
+        if (num - step * 2 >= 0) candidates.push(num - step * 2);
+        candidates.push(num * 2);
+        candidates.push(num + 5);
+        candidates.push(num + 6);
+      }
+      for (let c = 1; c <= 50; c++) {
+        candidates.push(c);
+      }
     }
+
     // General fallback sequence
     for (let c = 1; c <= 200; c++) {
       candidates.push(c);
-      candidates.push(c * step);
+      if (hasDecimals) {
+        candidates.push(c * 0.5);
+        candidates.push(c * 0.25);
+      }
     }
 
     for (const cand of candidates) {
-      if (!existingNumbers.has(cand) && cand > 0) {
+      if (cand <= 0 && minVal > 0) continue;
+      // If any existing option ends in .1, reject candidate if it also ends in .1
+      if (endsInPointOne && Math.abs((Math.abs(cand) % 1) - 0.1) < 1e-3) {
+        continue;
+      }
+      if (existingNumbers.has(cand)) continue;
+
+      const formatted = Number.isInteger(cand)
+        ? cand.toString()
+        : parseFloat(cand.toFixed(4)).toString();
+      const candidateStr = `${detectedPrefix}${formatted}${detectedSuffix}`.trim();
+      const norm = normalizeText(candidateStr);
+      const optVal = normalizeOptionValue(candidateStr);
+
+      if (!usedNormalized.has(norm) && !usedOptionValues.has(optVal) && !usedRawValues.has(candidateStr.toLowerCase())) {
         existingNumbers.add(cand);
-        const formatted = Number.isInteger(cand) ? cand.toString() : cand.toFixed(1);
-        const candidateStr = `${prefix}${formatted}${suffix}`.trim();
-        const norm = normalizeText(candidateStr);
-        if (!usedNormalized.has(norm) && !usedRawValues.has(candidateStr.toLowerCase())) {
-          return candidateStr;
-        }
+        return candidateStr;
       }
     }
+
     // Absolute fallback
-    const fallbackNum = (maxVal || 10) + 6;
+    const fallbackNum = (maxVal || 10) + 7;
     existingNumbers.add(fallbackNum);
-    return `${prefix}${fallbackNum}${suffix}`.trim();
+    return `${detectedPrefix}${fallbackNum}${detectedSuffix}`.trim();
   }
 
-  // Textual distractor banks for non-numeric options
+  // Generic and subject-informed fallback distractors
   const genericDistractors = [
     'None of the above',
     'Cannot be determined',
     'Both A and B',
     'Neither A nor B',
+    'Data insufficient',
     'Information insufficient',
     'Partially correct'
   ];
 
-  // 2. Iterate through all other options (distractors)
+  // Resolve collisions on distractor slots (skipping the correct answer slot)
   for (const letter of letters) {
-    if (letter === targetAnsLetter) continue; // Skip correct answer
+    if (letter === targetAnsLetter) continue;
 
     let curVal = fixedOptions[letter];
     const norm = normalizeText(curVal);
+    const optVal = normalizeOptionValue(curVal);
+    const hasPtOne = hasPointOneFraction(curVal);
+    const isRepeatedPointOne = hasPtOne && seenPointOne;
 
-    if (!curVal || usedNormalized.has(norm) || usedRawValues.has(curVal.toLowerCase())) {
-      // Need a replacement distinct value
+    if (!curVal || isRepeatedPointOne || usedNormalized.has(norm) || usedOptionValues.has(optVal) || usedRawValues.has(curVal.toLowerCase())) {
       let replacement = '';
       if (isPredominantlyNumeric) {
         replacement = getUniqueNumericDistractor();
       } else {
-        // Look for unused textual distractor
         for (const cand of genericDistractors) {
           const candNorm = normalizeText(cand);
-          if (!usedNormalized.has(candNorm) && !usedRawValues.has(cand.toLowerCase())) {
+          const candOpt = normalizeOptionValue(cand);
+          if (!usedNormalized.has(candNorm) && !usedOptionValues.has(candOpt) && !usedRawValues.has(cand.toLowerCase())) {
             replacement = cand;
             break;
           }
@@ -903,7 +1271,7 @@ export function fixDuplicateOptions(questionObj) {
           while (!replacement) {
             const cand = `${curVal || 'Option'} (Alternative ${count})`;
             const candNorm = normalizeText(cand);
-            if (!usedNormalized.has(candNorm)) {
+            if (!usedNormalized.has(candNorm) && !usedOptionValues.has(normalizeOptionValue(cand))) {
               replacement = cand;
             }
             count++;
@@ -912,13 +1280,21 @@ export function fixDuplicateOptions(questionObj) {
       }
 
       fixedOptions[letter] = replacement;
-      if (fixedOptionsHi[letter] && fixedOptionsHi[letter] === fixedOptionsHi[targetAnsLetter]) {
-        fixedOptionsHi[letter] = replacement; // Synchronize Hindi option if present
+      if (fixedOptionsHi[letter] !== undefined) {
+        fixedOptionsHi[letter] = HINDI_DISTRACTOR_MAP[replacement] || replacement;
       }
       usedNormalized.add(normalizeText(replacement));
+      usedOptionValues.add(normalizeOptionValue(replacement));
       usedRawValues.add(replacement.toLowerCase());
+      if (hasPointOneFraction(replacement)) {
+        seenPointOne = true;
+      }
     } else {
+      if (hasPtOne) {
+        seenPointOne = true;
+      }
       usedNormalized.add(norm);
+      usedOptionValues.add(optVal);
       usedRawValues.add(curVal.toLowerCase());
     }
   }
@@ -938,25 +1314,31 @@ export function fixDuplicateOptions(questionObj) {
 }
 
 /**
- * Random Option Distribution & Shuffler
- * Prevents option bias (where correct answers stack up mostly on Option A).
- * Re-maps options A, B, C, D to a uniform random distribution or designated target letter,
+ * Option Distribution & Shuffler
+ * Prevents option bias (e.g. correct answers stacking up mostly on Option A).
+ * Re-maps options A, B, C, D to a round-robin or designated target letter,
+ * ensuring correct answers are evenly distributed across A, B, C, and D without bias,
  * while automatically updating correct_answer and Hindi options to stay 100% synchronized.
  */
 export function distributeQuestionOptions(questionObj, targetLetter = null) {
   if (!questionObj || typeof questionObj !== 'object') return questionObj;
 
   const letters = ['A', 'B', 'C', 'D'];
-  const currentAnswer = cleanAnswer(questionObj.correct_answer);
+  const currentAnswer = cleanAnswer(questionObj.correct_answer, questionObj);
   if (!letters.includes(currentAnswer)) return questionObj;
 
-  // Choose target letter: provided or uniformly random from A, B, C, D
-  const destinationLetter = targetLetter && letters.includes(targetLetter)
-    ? targetLetter
-    : letters[Math.floor(Math.random() * letters.length)];
+  // Select destination letter: designated, random, or round-robin uniform
+  let destinationLetter;
+  if (targetLetter && letters.includes(targetLetter.toUpperCase())) {
+    destinationLetter = targetLetter.toUpperCase();
+  } else if (targetLetter === 'random') {
+    destinationLetter = letters[Math.floor(Math.random() * letters.length)];
+  } else {
+    destinationLetter = letters[(globalDistributionIndex++) % letters.length];
+  }
 
   if (destinationLetter === currentAnswer) {
-    return questionObj;
+    return { ...questionObj, correct_answer: destinationLetter };
   }
 
   // Swap current answer slot with destinationLetter slot
@@ -996,11 +1378,23 @@ export function resolveOptionDuplicatesAndDistribute(questionObj, options = {}) 
 }
 
 /**
+ * Distributes a batch of questions evenly across A, B, C, D (25% each)
+ * without any option bias.
+ */
+export function distributeQuestionBatch(questions = []) {
+  if (!Array.isArray(questions)) return [];
+  const letters = ['A', 'B', 'C', 'D'];
+  return questions.map((q, idx) => {
+    return resolveOptionDuplicatesAndDistribute(q, { targetLetter: letters[idx % letters.length] });
+  });
+}
+
+/**
  * Deterministic Question Validation
  * Verifies:
  * 1. Non-empty question, min length 8
  * 2. Exactly four non-empty options A, B, C, D
- * 3. All four options are mutually distinct
+ * 3. All four options are mutually distinct (evaluating text and numeric equivalence)
  * 4. Correct answer is strictly A, B, C, or D
  * 5. Correct answer matches a non-empty option text
  * 6. If source is required (e.g. Current Affairs), source_url or source_name must exist
@@ -1025,15 +1419,16 @@ export function validateQuestionDeterministic(q, options = {}) {
   if (!optC) errors.push('Option C is missing');
   if (!optD) errors.push('Option D is missing');
 
-  // Distinct options check
+  // Distinct options check: checks both textual and numeric/value equivalence
   const rawOpts = [optA, optB, optC, optD].filter(Boolean);
   const normalizedOpts = rawOpts.map(normalizeText);
-  if (new Set(normalizedOpts).size !== rawOpts.length) {
+  const normalizedVals = rawOpts.map(normalizeOptionValue);
+  if (new Set(normalizedOpts).size !== rawOpts.length || new Set(normalizedVals).size !== rawOpts.length) {
     // Options must be distinct (duplicate option detected)
     errors.push('Options must be distinct (duplicate option detected)');
   }
 
-  const ans = cleanAnswer(q?.correct_answer);
+  const ans = cleanAnswer(q?.correct_answer, q);
   if (!['A', 'B', 'C', 'D'].includes(ans)) {
     errors.push('Correct answer must be strictly A, B, C, or D');
   } else {
@@ -1091,7 +1486,7 @@ export function withApiLogging(handler, routeName = 'api') {
     } catch (err) {
       console.error(`[${routeName}] API Error:`, err);
       if (res && typeof res.status === 'function' && !res.headersSent) {
-        return res.status(500).json({ error: err?.message || 'Internal Server Error' });
+        return res.status(500).json({ error: sanitizeErrorResponse(err) });
       }
       throw err;
     }
@@ -1131,7 +1526,7 @@ export function cleanJsonParse(text, fallback = {}) {
 
 /**
  * Standard CORS & HTTP Preflight (OPTIONS) Handler
- * Sets permissive headers for API calls from web clients, and immediately finishes OPTIONS requests.
+ * Sets permissive headers for API calls from web clients, security headers, and immediately finishes OPTIONS requests.
  */
 export function handleCorsAndOptions(req, res, allowedMethods = ['GET', 'POST', 'OPTIONS']) {
   if (!res || typeof res.setHeader !== 'function') return false;
@@ -1139,6 +1534,11 @@ export function handleCorsAndOptions(req, res, allowedMethods = ['GET', 'POST', 
   res.setHeader('Access-Control-Allow-Methods', allowedMethods.join(', '));
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Range');
   res.setHeader('Access-Control-Expose-Headers', 'Content-Range, X-Content-Range');
+  // Security & Defenses
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
   if (req?.method === 'OPTIONS') {
     if (typeof res.status === 'function') {
       res.status(204).end();
@@ -1164,4 +1564,160 @@ export function getQueryParams(req) {
     return {};
   }
 }
+
+/**
+ * Derives appropriate subject/domain pool from an exam title
+ */
+export function deriveSubjectFromExamTitle(title = '') {
+  const t = String(title || '').toLowerCase().trim();
+  if (t.includes('reasoning') || t.includes('puzzle') || t.includes('general intelligence')) return 'Reasoning';
+  if (t.includes('math') || t.includes('quantitative') || t.includes('aptitude') || t.includes('arithmetic')) return 'Mathematics';
+  if (t.includes('banking awareness') || t.includes('banking') || t.includes('financial awareness') || t.includes('bank po')) return 'Banking Awareness';
+  if (t.includes('current affairs')) return 'Current Affairs';
+  if (t.includes('computer') || t.includes('it')) return 'Computer';
+  if (t.includes('english')) return 'English';
+  if (t.includes('hindi')) return 'Hindi';
+  if (t.includes('civil engineering') || t.includes('civil')) return 'Civil Engineering';
+  if (t.includes('electrical engineering') || t.includes('electrical')) return 'Electrical Engineering';
+  if (t.includes('mechanical engineering') || t.includes('mechanical')) return 'Mechanical Engineering';
+  if (t.includes('mp gk') || t.includes('mppsc')) return 'General Awareness';
+  if (t.includes('general awareness') || t.includes('general studies') || t.includes('gk')) return 'General Awareness';
+  return null;
+}
+
+/**
+ * Universal auto-mapping helper to map active approved questions into exam_questions
+ * Guarantees zero empty assignments when active approved questions exist in the bank.
+ */
+export async function queryAndMapApprovedQuestions(sb, examObj) {
+  if (!sb || !examObj?.id) {
+    return { ok: false, added: 0, total: 0, error: 'Database or exam ID missing' };
+  }
+
+  const examId = examObj.id;
+  const configuredTotal = Math.max(1, Number(examObj.total_questions || 25));
+  const examTitle = String(examObj.title || '').trim();
+  const subjectTarget = examObj.subject || deriveSubjectFromExamTitle(examTitle);
+
+  // 1. Attempt database RPC first
+  try {
+    const rpcRes = await sb.rpc('admin_map_exam_questions', { p_exam_id: examId });
+    if (!rpcRes.error && (rpcRes.data?.added > 0 || rpcRes.data?.total >= configuredTotal)) {
+      return {
+        ok: true,
+        added: rpcRes.data?.added || 0,
+        total: rpcRes.data?.total || 0,
+        source: 'rpc',
+        subject_used: subjectTarget
+      };
+    }
+  } catch (_) {
+    // Proceed to direct query fallback
+  }
+
+  // 2. Direct fallback auto-mapping
+  const { data: existingMapped, error: exErr } = await sb
+    .from('exam_questions')
+    .select('question_id, question_order')
+    .eq('exam_id', examId)
+    .order('question_order', { ascending: true });
+
+  if (exErr) {
+    console.warn('[AutoMap] Error querying existing exam_questions:', exErr.message);
+  }
+
+  const mappedIds = new Set((existingMapped || []).map(m => m.question_id));
+  const currentTotal = mappedIds.size;
+  const needed = Math.max(0, configuredTotal - currentTotal);
+
+  if (needed <= 0 && currentTotal > 0) {
+    return { ok: true, added: 0, total: currentTotal, source: 'existing', subject_used: subjectTarget };
+  }
+
+  // 3. Query approved questions pool from database
+  const { data: pool, error: poolErr } = await sb
+    .from('questions')
+    .select('id, question, option_a, option_b, option_c, option_d, correct_answer, subject, topic, difficulty, exam, status')
+    .eq('status', 'approved')
+    .order('created_at', { ascending: false })
+    .limit(800);
+
+  if (poolErr || !pool || pool.length === 0) {
+    return { ok: false, added: 0, total: currentTotal, error: poolErr?.message || 'No approved questions available' };
+  }
+
+  // Filter publishable valid questions
+  const validPool = pool.filter(q => {
+    if (mappedIds.has(q.id)) return false;
+    const ans = cleanAnswer(q.correct_answer, q);
+    if (!/^[ABCD]$/.test(ans)) return false;
+    const hasAllOptions = [q.option_a, q.option_b, q.option_c, q.option_d].every(v => String(v || '').trim().length > 0);
+    if (!hasAllOptions) return false;
+    const opts = [q.option_a, q.option_b, q.option_c, q.option_d].map(normalizeText);
+    if (new Set(opts).size < 4) return false;
+    if (isDependentContextMissing(q.question)) return false;
+    return true;
+  });
+
+  const selected = [];
+  const selectedIds = new Set();
+
+  const matchesSubjectOrExam = (q) => {
+    if (subjectTarget && isSubjectStrictMatch(q.subject, subjectTarget)) return true;
+    if (examTitle && q.exam && (
+      examTitle.toLowerCase().includes(String(q.exam).toLowerCase()) ||
+      String(q.exam).toLowerCase().includes(examTitle.toLowerCase())
+    )) return true;
+    return false;
+  };
+
+  // Phase 1: Matching subject or exam keywords
+  for (const q of validPool) {
+    if (selected.length >= needed) break;
+    if (matchesSubjectOrExam(q) && !selectedIds.has(q.id)) {
+      selected.push(q);
+      selectedIds.add(q.id);
+    }
+  }
+
+  // Phase 2: If pool has shortage for specific subject, fulfill from active approved pool
+  if (selected.length < needed) {
+    for (const q of validPool) {
+      if (selected.length >= needed) break;
+      if (!selectedIds.has(q.id)) {
+        selected.push(q);
+        selectedIds.add(q.id);
+      }
+    }
+  }
+
+  if (selected.length === 0) {
+    return { ok: true, added: 0, total: currentTotal, source: 'empty_pool', subject_used: subjectTarget };
+  }
+
+  // Insert into exam_questions
+  const nextOrderStart = (existingMapped || []).length;
+  const mappings = selected.map((q, idx) => ({
+    exam_id: examId,
+    question_id: q.id,
+    question_order: nextOrderStart + idx + 1
+  }));
+
+  const { error: insertErr } = await sb
+    .from('exam_questions')
+    .insert(mappings);
+
+  if (insertErr) {
+    return { ok: false, added: 0, total: currentTotal, error: insertErr.message };
+  }
+
+  return {
+    ok: true,
+    added: mappings.length,
+    total: currentTotal + mappings.length,
+    source: 'direct',
+    subject_used: subjectTarget
+  };
+}
+
 

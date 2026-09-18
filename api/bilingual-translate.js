@@ -3,8 +3,15 @@ import {
   getGeminiClient,
   verifyAdminAuth,
   callGeminiWithRetry,
+  getNormalizedGeminiModel,
+  cleanJsonParse,
   cleanAnswer,
-  withApiLogging
+  withApiLogging,
+  isValidUuid,
+  sanitizeObject,
+  sanitizeErrorResponse,
+  checkRateLimit,
+  getClientIp
 } from './_shared.js';
 
 /**
@@ -56,7 +63,7 @@ Source Question Details:
   const response = await callGeminiWithRetry(
     () =>
       gemini.models.generateContent({
-        model: process.env.GEMINI_REVIEW_MODEL_ID || 'gemini-3.8-flash',
+        model: getNormalizedGeminiModel(process.env.GEMINI_REVIEW_MODEL_ID),
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
           responseMimeType: 'application/json'
@@ -69,8 +76,7 @@ Source Question Details:
     }
   );
 
-  const text = (response?.text || '{}').trim();
-  const parsed = JSON.parse(text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim());
+  const parsed = cleanJsonParse(response?.text || '{}');
 
   if (sourceLang === 'en') {
     return {
@@ -112,6 +118,16 @@ async function handler(req, res) {
     return res.status(405).json({ ok: false, error: 'POST method required' });
   }
 
+  // 1. Autonomous Rate Limiting (Defense against abusive Gemini queries)
+  const ip = getClientIp(req);
+  const rate = checkRateLimit(ip, 'bilingual-translate', 20, 60000);
+  if (!rate.allowed) {
+    if (res && typeof res.setHeader === 'function') {
+      res.setHeader('Retry-After', String(rate.retryAfter));
+    }
+    return res.status(429).json({ ok: false, error: 'Too many requests. Please wait before triggering another translation batch.' });
+  }
+
   const sb = getSupabaseAdmin(req);
   if (!sb) {
     return res.status(500).json({ ok: false, error: 'Database connection unavailable' });
@@ -123,7 +139,7 @@ async function handler(req, res) {
     return res.status(auth.statusCode || 401).json({ ok: false, error: auth.error });
   }
 
-  const gemini = getGeminiClient();
+  const gemini = req?.geminiClient || getGeminiClient();
   if (!gemini) {
     return res.status(503).json({
       ok: false,
@@ -132,8 +148,16 @@ async function handler(req, res) {
   }
 
   // Request can pass either question_ids (to update DB directly) or questions array (for uploaded items)
-  const questionIds = Array.isArray(req.body?.question_ids) ? req.body.question_ids.slice(0, 30) : [];
-  const rawQuestions = Array.isArray(req.body?.questions) ? req.body.questions.slice(0, 30) : [];
+  const body = sanitizeObject(req.body || {});
+  const rawQuestionIds = Array.isArray(body?.question_ids) ? body.question_ids : [];
+  const questionIds = rawQuestionIds
+    .filter(id => typeof id === 'string' && isValidUuid(id.trim()))
+    .map(id => id.trim())
+    .slice(0, 30);
+
+  const rawQuestions = Array.isArray(body?.questions)
+    ? body.questions.slice(0, 30).map(q => sanitizeObject(q))
+    : [];
 
   let itemsToTranslate = [];
 
@@ -143,7 +167,7 @@ async function handler(req, res) {
       .select('*')
       .in('id', questionIds);
     if (error) {
-      return res.status(500).json({ ok: false, error: error.message });
+      return res.status(500).json({ ok: false, error: sanitizeErrorResponse(error, 'Database error during question translation lookup') });
     }
     itemsToTranslate = data || [];
   } else if (rawQuestions.length) {
@@ -158,7 +182,7 @@ async function handler(req, res) {
       .order('created_at', { ascending: false })
       .limit(15);
     if (error) {
-      return res.status(500).json({ ok: false, error: error.message });
+      return res.status(500).json({ ok: false, error: sanitizeErrorResponse(error, 'Database query error for untranslated questions') });
     }
     itemsToTranslate = data || [];
   }

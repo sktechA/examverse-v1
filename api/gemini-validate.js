@@ -5,7 +5,15 @@ import {
   validateQuestionDeterministic,
   verifyAdminAuth,
   cleanJsonParse,
-  handleCorsAndOptions
+  callGeminiWithRetry,
+  getNormalizedGeminiModel,
+  handleCorsAndOptions,
+  isValidUuid,
+  sanitizeObject,
+  sanitizeString,
+  sanitizeErrorResponse,
+  checkRateLimit,
+  getClientIp
 } from './_shared.js';
 
 export default async function handler(req, res) {
@@ -14,36 +22,47 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'POST required' });
+    return res.status(405).json({ ok: false, error: 'POST required' });
+  }
+
+  // 1. Autonomous Rate Limiting (Protects Gemini quota & server load)
+  const ip = getClientIp(req);
+  const rate = checkRateLimit(ip, 'gemini-validate', 30, 60000);
+  if (!rate.allowed) {
+    if (res && typeof res.setHeader === 'function') {
+      res.setHeader('Retry-After', String(rate.retryAfter));
+    }
+    return res.status(429).json({ ok: false, error: 'Too many requests. Please wait before triggering another validation batch.' });
   }
 
   const sb = getSupabaseAdmin(req);
   if (!sb) {
-    return res.status(500).json({ error: 'Database server configuration unavailable' });
+    return res.status(500).json({ ok: false, error: 'Database server configuration unavailable' });
   }
 
-  // Authorization Check
+  // 2. Authorization Check
   const auth = await verifyAdminAuth(req, sb);
   if (!auth.ok) {
-    return res.status(auth.statusCode || 401).json({ error: auth.error });
+    return res.status(auth.statusCode || 401).json({ ok: false, error: auth.error });
   }
 
   try {
+    const body = sanitizeObject(req.body || {});
     const {
       questions = [],
       threshold = 0.93,
       forceAi = false,
       saveToDb = false
-    } = req.body || {};
+    } = body;
 
     if (!Array.isArray(questions) || questions.length === 0) {
-      return res.status(400).json({ error: 'questions array is required' });
+      return res.status(400).json({ ok: false, error: 'questions array is required' });
     }
 
     // Clamped batch limit (max 25 questions)
     const limitedQuestions = questions.slice(0, 25);
-    const gemini = getGeminiClient();
-    const isAiGloballyEnabled = (process.env.GEMINI_AI_ENABLED === 'true') || forceAi;
+    const gemini = req?.geminiClient || getGeminiClient();
+    const isAiGloballyEnabled = (process.env.GEMINI_AI_ENABLED === 'true') || forceAi || Boolean(req?.geminiClient);
 
     const results = [];
     let approvedCount = 0;
@@ -139,24 +158,28 @@ Return JSON:
   ]
 }`;
 
-          const response = await Promise.race([
-            gemini.models.generateContent({
-              model: process.env.GEMINI_REVIEW_MODEL_ID || 'gemini-3.8-flash',
-              contents: [
-                {
-                  role: 'user',
-                  parts: [
-                    { text: prompt },
-                    { text: JSON.stringify({ questions: aiBatchInput }) }
-                  ]
-                }
-              ],
-              config: { responseMimeType: 'application/json' }
-            }),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('Gemini validation request timed out after 15s')), 15000)
-            )
-          ]);
+          const response = await callGeminiWithRetry(
+            () =>
+              gemini.models.generateContent({
+                model: getNormalizedGeminiModel(process.env.GEMINI_REVIEW_MODEL_ID),
+                contents: [
+                  {
+                    role: 'user',
+                    parts: [
+                      { text: prompt },
+                      { text: JSON.stringify({ questions: aiBatchInput }) }
+                    ]
+                  }
+                ],
+                config: { responseMimeType: 'application/json' }
+              }),
+            {
+              operationName: 'Gemini Validation Batch',
+              maxRetries: 3,
+              timeoutMs: 15000,
+              initialDelayMs: 1000
+            }
+          );
 
           const rawText = response.text || '{}';
           const parsed = cleanJsonParse(rawText);
@@ -217,7 +240,7 @@ Return JSON:
               deterministic_valid: true,
               duplicate: false,
               confidence: 0, // Zero fake confidence
-              notes: `AI validation failed (${aiErr.message}); flagged for admin review`,
+              notes: `AI validation failed; flagged for admin review`,
               ai_validated: false
             });
             reviewCount++;
@@ -244,17 +267,17 @@ Return JSON:
       }
     }
 
-    // Step 3: Save to DB if requested and id is present
+    // Step 3: Save to DB if requested and valid UUID id is present
     if (saveToDb && sb) {
       for (const resItem of results) {
-        if (!resItem.id) continue;
+        if (!resItem.id || !isValidUuid(resItem.id)) continue;
         await sb
           .from('questions')
           .update({
             status: resItem.status,
             ai_review_status: resItem.status,
             ai_confidence: resItem.confidence,
-            ai_notes: resItem.notes,
+            ai_notes: sanitizeString(resItem.notes, 500),
             ai_reviewed_at: new Date().toISOString()
           })
           .eq('id', resItem.id);
@@ -272,7 +295,7 @@ Return JSON:
   } catch (err) {
     return res.status(500).json({
       ok: false,
-      error: err.message || 'Validation request failed'
+      error: sanitizeErrorResponse(err, 'Validation request failed')
     });
   }
 }

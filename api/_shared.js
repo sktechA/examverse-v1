@@ -1,53 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
-import url from 'node:url';
 import crypto from 'node:crypto';
-
-// 1. Monkey-patch legacy url.parse using the WHATWG URL standard to eliminate [DEP0169] DeprecationWarning
-if (typeof url.parse === 'function') {
-  const originalUrlParse = url.parse;
-  url.parse = function(urlStr, parseQueryString, slashesDenoteHost) {
-    if (typeof urlStr === 'string') {
-      try {
-        const parsed = new URL(urlStr, 'http://localhost');
-        return {
-          protocol: parsed.protocol,
-          slashes: true,
-          auth: parsed.username ? (parsed.password ? `${parsed.username}:${parsed.password}` : parsed.username) : null,
-          host: parsed.host,
-          port: parsed.port,
-          hostname: parsed.hostname,
-          hash: parsed.hash,
-          search: parsed.search,
-          query: parseQueryString ? Object.fromEntries(parsed.searchParams) : (parsed.search ? parsed.search.slice(1) : ''),
-          pathname: parsed.pathname,
-          path: parsed.pathname + parsed.search,
-          href: parsed.href
-        };
-      } catch (_) {}
-    }
-    return originalUrlParse.call(this, urlStr, parseQueryString, slashesDenoteHost);
-  };
-}
-
-// 2. Suppress DEP0169 Node deprecation warnings if emitted by any legacy internals
-if (typeof process !== 'undefined' && process.emitWarning) {
-  const originalEmitWarning = process.emitWarning;
-  process.emitWarning = function(warning, ...args) {
-    if (typeof warning === 'string' && (warning.includes('DEP0169') || warning.includes('url.parse'))) {
-      return;
-    }
-    if (warning && typeof warning === 'object') {
-      if (warning.name === 'DeprecationWarning' && warning.message && warning.message.includes('url.parse')) {
-        return;
-      }
-      if (warning.code === 'DEP0169') {
-        return;
-      }
-    }
-    return originalEmitWarning.call(this, warning, ...args);
-  };
-}
 
 export const VALID_SUBJECTS = [
   'Mathematics', 'Reasoning', 'General Awareness', 'Current Affairs',
@@ -522,8 +475,10 @@ export function getSupabaseAdmin(req = null) {
     }
   }
 
-  // Cross-resolve secret/service-role keys across any naming variation
-  let secretKey = (
+  // Privileged server client: NEVER fall back to a browser publishable/anon key.
+  // SUPABASE_SECRET_KEY is preferred for the modern Supabase secret key; the
+  // legacy service-role names remain supported for existing deployments.
+  const secretKey = (
     process.env.SUPABASE_SECRET_KEY ||
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_SERVICE_KEY ||
@@ -531,50 +486,18 @@ export function getSupabaseAdmin(req = null) {
     ''
   ).trim();
 
-  const anonKey = (
-    process.env.VITE_SUPABASE_ANON_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
-    process.env.SUPABASE_PUBLISHABLE_KEY ||
-    ''
-  ).trim();
-
-  if (anonKey) {
-    if (!process.env.VITE_SUPABASE_ANON_KEY) process.env.VITE_SUPABASE_ANON_KEY = anonKey;
-    if (!process.env.SUPABASE_ANON_KEY) process.env.SUPABASE_ANON_KEY = anonKey;
-  }
-
-  const hasServiceKey = Boolean(secretKey);
-  // Seamless fallback: Use anonKey when dedicated secret service role key is absent
-  if (!secretKey && anonKey) {
-    secretKey = anonKey;
-  }
-
-  // Populate mutual aliases so downstream scripts/tools never face missing service role keys
-  if (secretKey) {
-    if (!process.env.SUPABASE_SECRET_KEY) process.env.SUPABASE_SECRET_KEY = secretKey;
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) process.env.SUPABASE_SERVICE_ROLE_KEY = secretKey;
-  }
-
-  const isKeyValid = Boolean(secretKey);
   console.info('[DB] Supabase config:', JSON.stringify({
     url: url ? 'OK' : 'MISSING',
-    secret_key: hasServiceKey ? 'OK' : (isKeyValid ? 'RESOLVED_VIA_ANON_KEY' : 'MISSING'),
-    service_role_key: hasServiceKey ? 'OK' : (isKeyValid ? 'RESOLVED_VIA_ANON_KEY' : 'MISSING'),
-    anon_key: anonKey ? 'OK' : 'MISSING',
-    selected_key: hasServiceKey ? 'SERVICE_ROLE' : (isKeyValid ? 'ANON_FALLBACK' : 'NONE')
+    privileged_key: secretKey ? 'OK' : 'MISSING'
   }));
 
   if (!url || !secretKey) {
     return createResilientMockClient();
   }
 
-  const authHeader = req?.headers?.authorization || req?.headers?.Authorization || '';
   const options = {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
   };
-  if (authHeader && !hasServiceKey) {
-    options.global = { headers: { Authorization: authHeader } };
-  }
 
   try {
     return createClient(url, secretKey, options);
@@ -584,7 +507,7 @@ export function getSupabaseAdmin(req = null) {
   }
 }
 
-// User-session client: publishable/anon key or admin key used to validate caller JWT.
+// User-session client: browser-safe publishable/anon key used to validate the caller JWT.
 export function getSupabaseUser(req = null) {
   let rawUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
   let url = rawUrl;
@@ -600,8 +523,6 @@ export function getSupabaseUser(req = null) {
     process.env.VITE_SUPABASE_ANON_KEY ||
     process.env.SUPABASE_ANON_KEY ||
     process.env.SUPABASE_PUBLISHABLE_KEY ||
-    process.env.SUPABASE_SECRET_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
     ''
   ).trim();
 
@@ -1840,7 +1761,7 @@ export function handleCorsAndOptions(req, res, allowedMethods = ['GET', 'POST', 
 
 /**
  * WHATWG-compliant query parameter parser
- * Fallback parser using modern WHATWG URL API instead of deprecated url.parse
+ * Fallback parser using the modern WHATWG URL API
  */
 export function getQueryParams(req) {
   if (req?.query && typeof req.query === 'object') return req.query;

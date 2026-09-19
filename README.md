@@ -20,7 +20,7 @@ View your app in AI Studio: https://ai.studio/apps/982a76ab-9650-43aa-9e27-be95d
    `npm run dev`
 
 
-## V18.2 all-issues fix
+## V18.3 production deployment fix
 - Automation settings reload now maps database field names back to the admin UI fields.
 - Question TXT parser now distinguishes numbered questions from numbered options and requires strict option labels.
 - First numbered question is no longer skipped when no active question exists.
@@ -28,5 +28,6 @@ View your app in AI Studio: https://ai.studio/apps/982a76ab-9650-43aa-9e27-be95d
 - Letter options no longer retain the delimiter (`A. text` -> `text`).
 - Approved mock generation filters incomplete/duplicate records before candidate delivery.
 - Daily scheduler consumes approved database inventory before invoking Gemini, reducing unnecessary Gemini calls/timeouts.
-- Vite dev middleware uses WHATWG `URL` instead of deprecated `url.parse()`.
+- Removed the legacy `node:url` monkey-patch and all `url.parse()` usage from the shared server runtime.
+- Kept the production question-integrity API deployed; only the local exhaustive test runner remains excluded from Vercel Functions.
 - No production deployment is performed by this package change.

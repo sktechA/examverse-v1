@@ -1,0 +1,11 @@
+# Vercel Deployment Exclusions
+# Prevents test suites from being counted as Serverless Functions (Hobby plan limit: 12 functions)
+api/question-integrity-test.js
+api/test-all-functions.js
+
+# Exclude local database migrations, seeds, and documentation
+*.sql
+*.txt
+question_data/
+seed_data/
+sample_questions.csv

@@ -1,0 +1,398 @@
+/**
+ * SKTech Exam Portal - Bilingual Translation Dictionary (English / हिंदी)
+ * Provides comprehensive translations for Dashboard, Navigation, Headers,
+ * Stats, Urgency Countdown, Recruitment Portals, and Action Buttons.
+ */
+
+export const TRANSLATIONS = {
+  en: {
+    // Top Bar & Brand
+    portalTitle: 'SKTech Exam Portal',
+    portalTagline: 'Prepare Smart. Perform Better.',
+    adminEyebrow: 'CONTROL CENTER',
+    candidateEyebrow: 'CANDIDATE AREA',
+    adminTitle: 'Admin Control Center',
+    candidateTitle: 'Your Preparation Center',
+    adminSubtitle: 'Manage users, exams, questions, vacancies and analytics.',
+    candidateSubtitle: 'Track your real scores, weak topics and preparation.',
+    adminBadge: 'ADMIN CONSOLE',
+    candidateBadge: 'CANDIDATE PORTAL',
+    liveWorkspace: 'Live workspace',
+    databaseConnected: 'Database connected',
+    connecting: 'Connecting…',
+
+    // Language Selector labels
+    langSwitchTitle: 'Dashboard Language',
+    languageOption: 'Language',
+    english: 'English',
+    hindi: 'हिंदी',
+
+    // Navigation
+    navDashboard: 'Dashboard',
+    navAutomation: 'Daily Automation',
+    navQuestions: 'Question Pipeline',
+    navExamsAdmin: 'Exams & CBT',
+    navCandidates: 'Candidates',
+    navVacancies: 'Vacancies',
+    navCurrentAffairs: 'Current Affairs',
+    navSystemLogs: 'System Logs',
+    navSettings: 'Settings',
+    navSubjects: 'Subjects & Practice',
+    navExams: 'Mock Tests',
+    navProfile: 'My Profile',
+    navLogout: 'Logout',
+
+    // Countdown Banner
+    countdownBadge: 'UPCOMING MP EXAM RECRUITMENT • OFFICIAL DATE: 06 OCT 2026',
+    countdownTitle: 'Madhya Pradesh Sub-Engineer Exam in {days} Days — Start Practicing Now!',
+    countdownSub: 'Target MPESB Group-3 Sub Engineer (Civil / Mech / Elec) CBT Mock Tests & Official Syllabus',
+    days: 'Days',
+    hours: 'Hours',
+    mins: 'Mins',
+    secs: 'Secs',
+    startPracticingNow: 'Start Practicing Now',
+
+    // Candidate Dashboard
+    dashboardHeading: 'Your Smart Dashboard',
+    dashboardSubheading: 'Your scores, attempts and weak areas are calculated from your real exam history.',
+    startPractice: 'Start Practice',
+    interruptedTitle: 'Interrupted Exam Available:',
+    timeRemaining: 'Time remaining:',
+    answeredOf: 'answered of',
+    resumeTest: 'Resume Test',
+
+    // Rank Predictor
+    intelligenceKicker: 'CANDIDATE INTELLIGENCE',
+    livePredictor: '● LIVE PREDICTOR',
+    predictorTitle: 'Live Performance & Rank Predictor',
+    predictorSub: 'Track your accuracy, speed, and all-India standing',
+    estimatedStanding: 'Estimated All-India Standing',
+    predictMyRank: 'Predict My Rank',
+
+    // Candidate Stats Tiles
+    overallScore: 'Overall Score',
+    latestVerified: 'Latest verified attempt',
+    noAttemptYet: 'No verified attempt yet',
+    testsCompleted: 'Tests Completed',
+    savedAttempts: 'Saved attempts',
+    startFirstMock: 'Start your first mock',
+    averageScore: 'Average Score',
+    acrossRecent: 'Across recent attempts',
+    buildBaseline: 'Build your baseline',
+    needsPractice: 'Needs Practice',
+    wrongAnswers: 'Wrong answers in latest test',
+
+    // Performance & Streak
+    performanceKicker: 'PERFORMANCE',
+    latestAttempt: 'Latest Attempt',
+    verified: 'Verified',
+    noAttempt: 'No attempt',
+    score: 'score',
+    correct: 'correct',
+    wrong: 'wrong',
+    skipped: 'skipped',
+    firstAction: 'FIRST ACTION',
+    buildBaselineDesc: 'Take a real mock using published questions. Your score and attempt will be saved automatically.',
+    takeAMock: 'Take a Mock',
+    yourPrepKicker: 'YOUR PREPARATION',
+    savedAttemptsCount: 'saved attempts',
+    practiceDesc: 'Use Subject Practice to target weak topics and review explanations after attempts.',
+    practiceSubjects: 'Practice Subjects',
+
+    // Current Affairs Tile
+    caKicker: 'CURRENT AFFAIRS',
+    caTitle: 'Daily Current Affairs',
+    caDesc: 'Official-source updates, daily questions and weekly/monthly mocks.',
+    openCA: 'Open Current Affairs',
+
+    // Recruitment Showcase
+    recruitmentTitle: 'Official Recruitment & Banking Notifications',
+    recruitmentSub: 'Direct official board portals, active vacancy notices and application windows',
+    newNotificationBadge: 'New Notification Released',
+    viewAllBoards: 'View All 7 Boards',
+    officialPortal: 'Official Portal',
+    applyWindow: 'Apply Window',
+
+    // Trending & Subjects
+    trendingExamsTitle: 'Trending Exams',
+    trendingExamsSub: 'Start a real CBT using questions that are approved in the question bank.',
+    practiceBySubjectTitle: 'Practice by Subject',
+    practiceBySubjectSub: 'Mathematics, Reasoning, GK, Current Affairs, Banking, MP and technical subjects.',
+    startMock: 'Start Mock',
+    questionsLabel: 'Questions',
+    easyModHard: 'Easy · Moderate · Hard',
+    difficultyLevels: 'Easy · Moderate · Hard',
+    interruptedExamBanner: 'Interrupted Exam Available',
+    answeredCount: '{answered} of {total} answered',
+    candidateIntelligence: 'CANDIDATE INTELLIGENCE',
+    rankPredictorTitle: 'Live Performance & Rank Predictor',
+    rankPredictorSub: 'Track your accuracy, speed, and all-India standing',
+    estimatedRank: 'Estimated All-India Standing',
+    latestVerifiedAttempt: 'Latest verified attempt',
+    noVerifiedAttemptYet: 'No verified attempt yet',
+    startYourFirstMock: 'Start your first mock',
+    acrossRecentAttempts: 'Across recent attempts',
+    buildYourBaseline: 'Build your baseline',
+    wrongAnswersInLatest: 'Wrong answers in latest test',
+    loading: 'Loading…',
+    scoreLabel: 'score',
+    correctLabel: 'correct',
+    wrongLabel: 'wrong',
+    skippedLabel: 'skipped',
+    buildBaselineTitle: 'Build your baseline',
+    yourPreparation: 'YOUR PREPARATION',
+    practiceSubjectsDesc: 'Use Subject Practice to target weak topics and review explanations after attempts.',
+    practiceSubjectsBtn: 'Practice Subjects',
+    dailyCurrentAffairsTitle: 'Daily Current Affairs',
+    dailyCurrentAffairsDesc: 'Official-source updates, daily questions and weekly/monthly mocks.',
+    openCurrentAffairs: 'Open Current Affairs',
+    officialRecruitmentTitle: 'Official Recruitment & Banking Notifications',
+    officialRecruitmentSub: 'Direct official board portals, active vacancy notices and application windows',
+    newNotificationReleased: 'New Notification Released',
+    subjectsTitle: '📚 Subject Practice',
+    subjectsSub: 'Select from the full subject library and choose difficulty inside the test.',
+    mockTestsTitle: '📝 Mock Tests',
+    mockTestsSub: 'Live published exams from the admin question bank.',
+    searchPlaceholder: 'Search exam...',
+    allExams: 'All Exams',
+    trending: 'Trending',
+
+    // Admin Dashboard
+    adminKicker: 'SKTECH EXAM ADMIN CONSOLE',
+    adminWelcome: 'Welcome back, Admin!',
+    adminConsoleDesc: 'One control center for questions, exams, candidates, vacancies, current affairs and analytics.',
+    totalCandidates: 'Total Candidates',
+    totalQuestions: 'Total Questions',
+    totalMockTests: 'Total Mock Tests',
+    totalAttempts: 'Total Attempts',
+    activeUsers: 'Active Users',
+    pageViews: 'Page Views',
+    revenue: 'Revenue',
+    adRevenue: 'Ad Revenue',
+    userAndExamActivity: 'User & Exam Activity',
+    realAnalyticsReady: 'Real analytics ready',
+    analyticsDesc: 'Activity will appear here as candidates browse, practice and attempt exams.',
+    systemHealth: 'System Health',
+    healthy: 'Healthy',
+    ready: 'Ready',
+    receiving: 'Receiving',
+    waiting: 'Waiting',
+    questionPipeline: 'Question Pipeline',
+    openReviewQueue: 'Open Review Queue →',
+    adminWorkspace: 'Admin Workspace',
+    importQuestions: 'Import Questions',
+    importQuestionsSub: 'Upload & auto filter',
+    createExam: 'Create Exam',
+    createExamSub: 'Pattern & schedule',
+    manageVacancies: 'Manage Vacancies',
+    manageVacanciesSub: 'Official sources',
+    candidateAlerts: 'Candidate Alerts',
+    candidateAlertsSub: 'Send & schedule',
+
+    // Footer
+    poweredBy: 'Powered by SKTech All Right Reserved'
+  },
+
+  hi: {
+    // Top Bar & Brand
+    portalTitle: 'SKTech परीक्षा पोर्टल',
+    portalTagline: 'स्मार्ट तैयारी। बेहतर परिणाम।',
+    adminEyebrow: 'एडमिन नियंत्रण केंद्र',
+    candidateEyebrow: 'अभ्यर्थी क्षेत्र',
+    adminTitle: 'एडमिन कंट्रोल सेंटर',
+    candidateTitle: 'आपका तैयारी केंद्र',
+    adminSubtitle: 'उपयोगकर्ताओं, परीक्षाओं, प्रश्नों, रिक्तियों और एनालिटिक्स का प्रबंधन करें।',
+    candidateSubtitle: 'अपने वास्तविक स्कोर, कमजोर विषय और तैयारी की प्रगति को ट्रैक करें।',
+    adminBadge: 'एडमिन कंसोल',
+    candidateBadge: 'अभ्यर्थी पोर्टल',
+    liveWorkspace: 'लाइव वर्कस्पेस',
+    databaseConnected: 'डेटाबेस कनेक्टेड',
+    connecting: 'सुरक्षित रूप से कनेक्ट हो रहा है…',
+
+    // Language Selector labels
+    langSwitchTitle: 'डैशबोर्ड भाषा (Language)',
+    languageOption: 'भाषा',
+    english: 'English',
+    hindi: 'हिंदी',
+
+    // Navigation
+    navDashboard: 'डैशबोर्ड',
+    navAutomation: 'दैनिक ऑटोमेशन',
+    navQuestions: 'प्रश्न पाइपलाइन',
+    navExamsAdmin: 'परीक्षाएं एवं CBT',
+    navCandidates: 'अभ्यर्थी सूची',
+    navVacancies: 'रिक्तियां एवं भर्तियां',
+    navCurrentAffairs: 'करेंट अफेयर्स',
+    navSystemLogs: 'सिस्टम लॉग्स',
+    navSettings: 'सेटिंग्स',
+    navSubjects: 'विषय एवं अभ्यास',
+    navExams: 'मॉक टेस्ट',
+    navProfile: 'मेरी प्रोफाइल',
+    navLogout: 'लॉगआउट',
+
+    // Countdown Banner
+    countdownBadge: 'आगामी मध्य प्रदेश परीक्षा भर्ती • आधिकारिक तिथि: 06 अक्टूबर 2026',
+    countdownTitle: 'मध्य प्रदेश सब-इंजीनियर परीक्षा {days} दिनों में — अभी अभ्यास शुरू करें!',
+    countdownSub: 'MPESB ग्रुप-3 सब इंजीनियर (सिविल / मैकेनिकल / इलेक्ट्रिकल) CBT मॉक टेस्ट एवं आधिकारिक पाठ्यक्रम',
+    days: 'दिन',
+    hours: 'घंटे',
+    mins: 'मिनट',
+    secs: 'सेकंड',
+    startPracticingNow: 'अब अभ्यास शुरू करें',
+
+    // Candidate Dashboard
+    dashboardHeading: 'आपका स्मार्ट डैशबोर्ड',
+    dashboardSubheading: 'आपके स्कोर, प्रयास और कमजोर क्षेत्रों की गणना आपके वास्तविक परीक्षा इतिहास से की जाती है।',
+    startPractice: 'अभ्यास शुरू करें',
+    interruptedTitle: 'अधूरा टेस्ट उपलब्ध है:',
+    timeRemaining: 'शेष समय:',
+    answeredOf: 'उत्तर दिए गए, कुल',
+    resumeTest: 'टेस्ट पुनः प्रारंभ करें',
+
+    // Rank Predictor
+    intelligenceKicker: 'अभ्यर्थी बुद्धिमत्ता',
+    livePredictor: '● लाइव प्रेडिक्टर',
+    predictorTitle: 'लाइव प्रदर्शन एवं रैंक प्रेडिक्टर',
+    predictorSub: 'अपनी सटीकता, गति और अखिल भारतीय रैंक का विश्लेषण करें',
+    estimatedStanding: 'अनुमानित अखिल भारतीय स्थिति',
+    predictMyRank: 'मेरी रैंक का अनुमान लगाएं',
+
+    // Candidate Stats Tiles
+    overallScore: 'कुल स्कोर',
+    latestVerified: 'नवीनतम सत्यापित प्रयास',
+    noAttemptYet: 'अभी तक कोई सत्यापित प्रयास नहीं',
+    testsCompleted: 'पूर्ण किए गए टेस्ट',
+    savedAttempts: 'सहेजे गए प्रयास',
+    startFirstMock: 'पहला मॉक टेस्ट दें',
+    averageScore: 'औसत स्कोर',
+    acrossRecent: 'हालिया प्रयासों का औसत',
+    buildBaseline: 'अपनी तैयारी शुरू करें',
+    needsPractice: 'अभ्यास की आवश्यकता',
+    wrongAnswers: 'नवीनतम टेस्ट में गलत उत्तर',
+
+    // Performance & Streak
+    performanceKicker: 'प्रदर्शन विश्लेषण',
+    latestAttempt: 'नवीनतम प्रयास',
+    verified: 'सत्यापित',
+    noAttempt: 'कोई प्रयास नहीं',
+    score: 'स्कोर',
+    correct: 'सही',
+    wrong: 'गलत',
+    skipped: 'छोड़े गए',
+    firstAction: 'प्रारंभिक कदम',
+    buildBaselineDesc: 'स्वीकृत प्रश्नों के साथ वास्तविक मॉक टेस्ट लें। आपका स्कोर और प्रयास स्वतः सहेजा जाएगा।',
+    takeAMock: 'मॉक टेस्ट दें',
+    yourPrepKicker: 'आपकी तैयारी',
+    savedAttemptsCount: 'सहेजे गए प्रयास',
+    practiceDesc: 'कमजोर विषयों पर ध्यान केंद्रित करने और टेस्ट के बाद विस्तृत हल देखने के लिए विषयवार अभ्यास करें।',
+    practiceSubjects: 'विषयों का अभ्यास करें',
+
+    // Current Affairs Tile
+    caKicker: 'करेंट अफेयर्स',
+    caTitle: 'दैनिक समसामयिकी (Current Affairs)',
+    caDesc: 'सरकारी स्रोतों से दैनिक अपडेट, अभ्यास प्रश्न एवं साप्ताहिक/मासिक मॉक।',
+    openCA: 'करेंट अफेयर्स खोलें',
+
+    // Recruitment Showcase
+    recruitmentTitle: 'आधिकारिक भर्ती एवं बैंकिंग अधिसूचनाएं',
+    recruitmentSub: 'सीधे आधिकारिक भर्ती बोर्ड पोर्टल, सक्रिय विज्ञप्तियां एवं आवेदन लिंक',
+    newNotificationBadge: 'नई अधिसूचना जारी',
+    viewAllBoards: 'सभी 7 भर्ती बोर्ड देखें',
+    officialPortal: 'आधिकारिक पोर्टल',
+    applyWindow: 'आवेदन लिंक',
+
+    // Trending & Subjects
+    trendingExamsTitle: 'ट्रेंडिंग परीक्षाएं',
+    trendingExamsSub: 'प्रश्न बैंक में स्वीकृत प्रश्नों के साथ वास्तविक कंप्यूटर आधारित टेस्ट (CBT) शुरू करें।',
+    practiceBySubjectTitle: 'विषय अनुसार अभ्यास',
+    practiceBySubjectSub: 'गणित, रीजनिंग, सामान्य ज्ञान, करेंट अफेयर्स, बैंकिंग, मध्य प्रदेश एवं तकनीकी विषय।',
+    startMock: 'मॉक शुरू करें',
+    questionsLabel: 'प्रश्न',
+    easyModHard: 'सरल · मध्यम · कठिन',
+    difficultyLevels: 'सरल · मध्यम · कठिन',
+    interruptedExamBanner: 'अधूरा टेस्ट उपलब्ध है',
+    answeredCount: '{total} में से {answered} उत्तर दिए गए',
+    candidateIntelligence: 'अभ्यर्थी बुद्धिमत्ता',
+    rankPredictorTitle: 'लाइव प्रदर्शन एवं रैंक प्रेडिक्टर',
+    rankPredictorSub: 'अपनी सटीकता, गति और अखिल भारतीय रैंक का विश्लेषण करें',
+    estimatedRank: 'अनुमानित अखिल भारतीय स्थिति',
+    latestVerifiedAttempt: 'नवीनतम सत्यापित प्रयास',
+    noVerifiedAttemptYet: 'अभी तक कोई सत्यापित प्रयास नहीं',
+    startYourFirstMock: 'पहला मॉक टेस्ट दें',
+    acrossRecentAttempts: 'हालिया प्रयासों का औसत',
+    buildYourBaseline: 'अपनी तैयारी शुरू करें',
+    wrongAnswersInLatest: 'नवीनतम टेस्ट में गलत उत्तर',
+    loading: 'लोड हो रहा है…',
+    scoreLabel: 'स्कोर',
+    correctLabel: 'सही',
+    wrongLabel: 'गलत',
+    skippedLabel: 'छोड़े गए',
+    buildBaselineTitle: 'अपनी तैयारी शुरू करें',
+    yourPreparation: 'आपकी तैयारी',
+    practiceSubjectsDesc: 'कमजोर विषयों पर ध्यान केंद्रित करने और टेस्ट के बाद विस्तृत हल देखने के लिए विषयवार अभ्यास करें।',
+    practiceSubjectsBtn: 'विषयों का अभ्यास करें',
+    dailyCurrentAffairsTitle: 'दैनिक समसामयिकी (Current Affairs)',
+    dailyCurrentAffairsDesc: 'सरकारी स्रोतों से दैनिक अपडेट, अभ्यास प्रश्न एवं साप्ताहिक/मासिक मॉक।',
+    openCurrentAffairs: 'करेंट अफेयर्स खोलें',
+    officialRecruitmentTitle: 'आधिकारिक भर्ती एवं बैंकिंग अधिसूचनाएं',
+    officialRecruitmentSub: 'सीधे आधिकारिक भर्ती बोर्ड पोर्टल, सक्रिय विज्ञप्तियां एवं आवेदन लिंक',
+    newNotificationReleased: 'नई अधिसूचना जारी',
+    subjectsTitle: '📚 विषय अनुसार अभ्यास',
+    subjectsSub: 'संपूर्ण विषय लाइब्रेरी से चुनें और टेस्ट के अंदर कठिनाई स्तर निर्धारित करें।',
+    mockTestsTitle: '📝 मॉक टेस्ट',
+    mockTestsSub: 'एडमिन प्रश्न बैंक से लाइव प्रकाशित परीक्षाएं।',
+    searchPlaceholder: 'परीक्षा खोजें...',
+    allExams: 'सभी परीक्षाएं',
+    trending: 'ट्रेंडिंग',
+
+    // Admin Dashboard
+    adminKicker: 'SKTECH परीक्षा एडमिन कंसोल',
+    adminWelcome: 'स्वागत है, एडमिन!',
+    adminConsoleDesc: 'प्रश्नों, परीक्षाओं, अभ्यर्थियों, रिक्तियों, करेंट अफेयर्स और एनालिटिक्स के लिए एक नियंत्रण केंद्र।',
+    totalCandidates: 'कुल अभ्यर्थी',
+    totalQuestions: 'कुल प्रश्न',
+    totalMockTests: 'कुल मॉक टेस्ट',
+    totalAttempts: 'कुल प्रयास',
+    activeUsers: 'सक्रिय उपयोगकर्ता',
+    pageViews: 'पेज व्यूज',
+    revenue: 'राजस्व',
+    adRevenue: 'विज्ञापन राजस्व',
+    userAndExamActivity: 'उपयोगकर्ता एवं परीक्षा गतिविधि',
+    realAnalyticsReady: 'रीयल-टाइम एनालिटिक्स तैयार',
+    analyticsDesc: 'जैसे ही अभ्यर्थी मॉक टेस्ट देंगे, उनका विवरण यहां रीयल-टाइम दिखेगा।',
+    systemHealth: 'सिस्टम स्वास्थ्य स्थिति',
+    healthy: 'सक्रिय (स्वस्थ)',
+    ready: 'तैयार',
+    receiving: 'प्राप्त हो रहा है',
+    waiting: 'प्रतीक्षारत',
+    questionPipeline: 'प्रश्न पाइपलाइन',
+    openReviewQueue: 'समीक्षा कतार खोलें →',
+    adminWorkspace: 'एडमिन कार्यक्षेत्र',
+    importQuestions: 'प्रश्न आयात करें',
+    importQuestionsSub: 'अपलोड एवं ऑटो फिल्टर',
+    createExam: 'परीक्षा बनाएं',
+    createExamSub: 'पैटर्न एवं समय-सारणी',
+    manageVacancies: 'रिक्तियां प्रबंधित करें',
+    manageVacanciesSub: 'आधिकारिक भर्ती स्रोत',
+    candidateAlerts: 'अभ्यर्थी अलर्ट',
+    candidateAlertsSub: 'भेजें एवं शेड्यूल करें',
+
+    // Footer
+    poweredBy: 'SKTech सर्वाधिकार सुरक्षित'
+  }
+};
+
+/**
+ * Returns translated string for a given key, interpolating any variables.
+ * Falls back to English, then to the key itself.
+ */
+export function t(lang = 'en', key = '', params = {}) {
+  const currentLang = (lang === 'hi' ? 'hi' : 'en');
+  let str = TRANSLATIONS[currentLang]?.[key] ?? TRANSLATIONS.en?.[key] ?? key;
+  if (params && typeof params === 'object') {
+    Object.entries(params).forEach(([paramKey, paramVal]) => {
+      str = str.replace(new RegExp(`\\{${paramKey}\\}`, 'g'), String(paramVal));
+    });
+  }
+  return str;
+}

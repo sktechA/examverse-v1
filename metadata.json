@@ -1,6 +1,6 @@
 {
   "name": "SKTech Exam Portal",
-  "description": "Prepare smart with real CBT mock tests, bilingual questions (English + हिन्दी), official recruitment vacancy alerts, and live all-India rank prediction.",
+  "description": "Comprehensive exam preparation, CBT mock tests, question bank management and automated current affairs portal",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

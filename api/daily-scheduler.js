@@ -8,8 +8,6 @@ import {
   validateQuestionDeterministic,
   isSubjectStrictMatch,
   normalizeText,
-  computeQuestionNormalizedHash,
-  isQuestionDuplicateInDb,
   verifyAdminAuth,
   cleanJsonParse,
   handleCorsAndOptions,
@@ -39,47 +37,25 @@ const SYLLABUS_TOPICS = {
     'Coding-Decoding', 'Order & Ranking', 'Alphabet & Number Series',
     'Seating Arrangement'
   ],
-  'Current Affairs': [
-    'National & International Summits (G20, Quad, BRICS, Bilateral Treaties)',
-    'State Special Topics (Japan-MP Industrial Model & Pithampur-Mandideep Corridor)',
-    'Ken-Betwa River Interlinking National Project & MP Infrastructure',
-    'Banking, Financial Sector & RBI Unified Lending Interface (ULI)',
-    'Landmark Legislative Bills (BNS, DPDP Act) & Public Welfare Rules'
-  ],
   'Banking Awareness': [
-    'RBI Functions, Monetary Policy & Policy Repo Rates',
-    'Unified Lending Interface (ULI) & Digital Financial Infrastructure',
-    'Central Bank Digital Currency (CBDC / e-Rupee) & Cross-Border Settlements',
-    'Financial Regulators (SEBI, IRDAI, PFRDA, IFSCA)',
-    'Priority Sector Lending & Infrastructure Credit Lines'
+    'RBI Functions & Monetary Policy', 'Banking Terminology',
+    'Financial Regulators (SEBI, IRDAI, PFRDA)', 'Payment Systems (RTGS, NEFT, IMPS, UPI)',
+    'Priority Sector Lending', 'Negotiable Instruments Act'
   ],
   'General Awareness': [
-    'International Summits, Bilateral Treaties & Global Pacts',
-    'Indian Constitution, Landmark Bills & New Legislative Rules (BNS, DPDP)',
-    'National Infrastructure Pipeline & Civil Engineering Milestones',
-    'Economic Policies, Industrial Corridors & Foreign Partnerships',
-    'Environment, Ecology & Ken-Betwa River Basin Management'
+    'Indian Constitution & Fundamental Rights', 'Modern Indian History',
+    'Physical Geography of India', 'Environment & Ecology',
+    'Important International Organizations'
   ],
   'MP GK': [
-    'Japan-Madhya Pradesh Industrial Model & SEZ Hubs (Pithampur & Mandideep)',
-    'Ken-Betwa River Interlink, Daudhan Dam & MP Irrigation Engineering',
-    'Rewa Ultra Mega Solar & Omkareshwar Floating Solar Infrastructure',
-    'Madhya Pradesh Industrial Promotion Policy & Investment Corridors',
-    'Geography, Rivers & National Parks of Madhya Pradesh',
-    'Tribes, Folk Culture & Heritage of MP',
-    'MP Government Flagship Welfare & Engineering Schemes'
+    'Madhya Pradesh Geography & Rivers', 'History of Madhya Pradesh',
+    'Tribes & Folk Culture of MP', 'National Parks & Wildlife Sanctuaries in MP',
+    'Important Welfare Schemes of MP Government'
   ],
   'Computer': [
     'Computer Memory & Storage Devices', 'Computer Networks & Internet Protocols',
     'Operating Systems & Windows Commands', 'Cyber Security, Malware & Antivirus',
     'MS Office, Excel & Word Keyboard Shortcuts'
-  ],
-  'Technical': [
-    'Civil Engineering: Building Materials, Concrete Technology, Surveying & Soil Mechanics',
-    'Mechanical Engineering: Thermodynamics, Fluid Mechanics, Theory of Machines & Strength of Materials',
-    'Electrical Engineering: Circuit Theory, Transformers, Power Systems & Electrical Machines',
-    'Electronics Engineering: Digital Electronics, Microprocessors & Analog Circuits',
-    'Computer Science & IT: Database Management Systems (DBMS), Operating Systems & Computer Networks'
   ],
   'English': [
     'Spotting Errors in Sentences', 'Vocabulary: Synonyms & Antonyms in Context',
@@ -87,14 +63,10 @@ const SYLLABUS_TOPICS = {
   ]
 };
 
-SYLLABUS_TOPICS['Banking'] = SYLLABUS_TOPICS['Banking Awareness'];
-
 const ROTATING_SUBJECTS = [
   'Mathematics',
   'Reasoning',
   'Banking Awareness',
-  'Technical',
-  'Current Affairs',
   'General Awareness',
   'MP GK',
   'Computer',
@@ -158,17 +130,7 @@ async function generateGeminiQuestionsForSubject(gemini, subject, count = 10, re
   const topics = SYLLABUS_TOPICS[subject] || ['General Syllabus Practice'];
   const topicList = topics.join(', ');
 
-  const isMultiDomainAware = ['Current Affairs', 'MP GK', 'General Awareness', 'Banking Awareness'].includes(subject);
-  const multiDomainGuidance = isMultiDomainAware ? `
-8. Dynamic Multi-Subject & State-Level Tracking Guidance:
-   - Cover high-impact topics:
-     * International Summits & Foreign Bilateral Treaties (India-Japan summits, technology partnerships)
-     * State Special Topics (Madhya Pradesh policies, industrial models such as Japan-Madhya Pradesh investment partnership at Pithampur/Mandideep, infrastructure projects like the Ken-Betwa river interlink)
-     * Banking, Financial Sector & Economic Impacts (RBI policy, Unified Lending Interface / ULI, Digital Rupee)
-     * Governance, Public Welfare & New Legislative Rules (Bharatiya Nyaya Sanhita, DPDP Act, state industrial policy)
-   - Multi-Angle Explanation: The explanation MUST detail (a) the core factual answer, (b) the strategic policy/statutory context, and (c) direct relevance for competitive exams like the MP Sub-Engineer Exam (MPESB CBT) and MPPSC.` : '';
-
-  const prompt = `You are an expert competitive exam question paper setter for Indian examinations (IBPS RRB, MPPSC, SSC, MP Sub-Engineer CBT).
+  const prompt = `You are an expert competitive exam question paper setter for Indian examinations (IBPS RRB, MPPSC, SSC).
 Generate exactly ${count} NEW, high-quality, syllabus-aligned multiple choice questions for Subject: "${subject}".
 Focus topics: ${topicList}.
 
@@ -184,7 +146,7 @@ CRITICAL INVARIANTS:
 4. Exactly ONE unambiguous correct answer, specified strictly as "A", "B", "C", or "D".
 5. Thorough educational explanation explaining why that answer is correct step-by-step.
 6. Difficulty: Moderate.
-7. Never output placeholder, incomplete, or synthetic filler text.${multiDomainGuidance}
+7. Never output placeholder, incomplete, or synthetic filler text.
 
 Return JSON in this EXACT schema:
 {
@@ -224,9 +186,7 @@ Return JSON in this EXACT schema:
   );
 
   const parsed = cleanJsonParse(response.text || '{}');
-  const rawList = Array.isArray(parsed.questions) ? parsed.questions : (Array.isArray(parsed) ? parsed : []);
-  // Automatically detect and replace duplicate or repeating option text with valid, unique alternative distractors
-  return rawList.map(item => resolveOptionDuplicatesAndDistribute(item));
+  return Array.isArray(parsed.questions) ? parsed.questions : [];
 }
 
 /**
@@ -472,22 +432,35 @@ export default async function handler(req, res) {
     for (const item of seeds) {
       if (candidateQuestions.length >= remainingTarget) break;
 
-      const normHash = computeQuestionNormalizedHash(item);
-      if (!normHash || usedHashes.has(normHash)) {
+      const hash = crypto
+        .createHash('sha256')
+        .update(`${item.question}:${item.option_a}:${item.correct_answer}`)
+        .digest('hex');
+
+      if (usedHashes.has(hash)) {
         duplicateCount++;
         continue;
       }
 
-      const isDup = await isQuestionDuplicateInDb(sb, item, usedHashes);
-      if (isDup) {
+      let exists = null;
+      if (sb) {
+        const { data } = await sb
+          .from('questions')
+          .select('id')
+          .eq('content_hash', hash)
+          .maybeSingle();
+        exists = data;
+      }
+
+      if (exists) {
         duplicateCount++;
         continue;
       }
 
-      usedHashes.add(normHash);
+      usedHashes.add(hash);
       candidateQuestions.push({
         ...item,
-        content_hash: normHash,
+        content_hash: hash,
         daily_job_key: jobKey
       });
     }
@@ -507,13 +480,12 @@ export default async function handler(req, res) {
           if (candidateQuestions.length >= remainingTarget) break;
           const val = validateQuestionDeterministic(item, { requireSource: item.subject === 'Current Affairs' });
           if (!val.valid) continue;
-          const normHash = computeQuestionNormalizedHash(item);
-          if (!normHash || usedHashes.has(normHash)) {
-            duplicateCount++;
-            continue;
-          }
-          usedHashes.add(normHash);
-          candidateQuestions.push({ ...item, correct_answer: val.cleanedAnswer, content_hash: normHash, daily_job_key: jobKey });
+          const hash = crypto.createHash('sha256')
+            .update(`${item.question}:${item.option_a}:${val.cleanedAnswer}`)
+            .digest('hex');
+          if (usedHashes.has(hash)) continue;
+          usedHashes.add(hash);
+          candidateQuestions.push({ ...item, correct_answer: val.cleanedAnswer, content_hash: hash, daily_job_key: jobKey });
         }
       } catch (inventoryErr) {
         console.warn('[Scheduler Approved Inventory Warning]:', inventoryErr.message);
@@ -565,35 +537,44 @@ export default async function handler(req, res) {
             };
 
             // Strict deterministic validation
-            const val = validateQuestionDeterministic(qRecord, {
-              requireSource: targetSubject === 'Current Affairs'
-            });
+            const val = validateQuestionDeterministic(qRecord);
             if (!val.valid) continue;
 
             // Strict subject isolation: never mix Mathematics with Reasoning
             if (targetSubject === 'Mathematics' && isSubjectStrictMatch(qRecord.subject, 'Reasoning')) continue;
             if (targetSubject === 'Reasoning' && isSubjectStrictMatch(qRecord.subject, 'Mathematics')) continue;
 
-            // Normalized hash matching across question and all 4 options
-            const normHash = computeQuestionNormalizedHash(qRecord);
-            if (!normHash || usedHashes.has(normHash)) {
+            const hash = crypto
+              .createHash('sha256')
+              .update(`${qRecord.question}:${qRecord.option_a}:${val.cleanedAnswer}`)
+              .digest('hex');
+
+            if (usedHashes.has(hash)) {
               duplicateCount++;
               continue;
             }
 
-            // Compare against existing database records
-            const isDup = await isQuestionDuplicateInDb(sb, qRecord, usedHashes);
-            if (isDup) {
+            let exists = null;
+            if (sb) {
+              const { data } = await sb
+                .from('questions')
+                .select('id')
+                .eq('content_hash', hash)
+                .maybeSingle();
+              exists = data;
+            }
+
+            if (exists) {
               duplicateCount++;
               continue;
             }
 
-            usedHashes.add(normHash);
+            usedHashes.add(hash);
             geminiGeneratedCount++;
             candidateQuestions.push({
               ...qRecord,
               correct_answer: val.cleanedAnswer,
-              content_hash: normHash
+              content_hash: hash
             });
           }
         } catch (genErr) {
@@ -850,134 +831,9 @@ export default async function handler(req, res) {
   }
 }
 
-/**
- * Strict 200 Unique Questions Quota Loop
- * Runs in an active retry/loop condition querying and synthesizing fresh batches across
- * subjects (Mathematics, Reasoning, Banking Awareness, Technical, Current Affairs)
- * until exactly the verified, non-duplicate unique questions quota is successfully added.
- */
-async function generateUniqueQuestionsQuotaLoop(sb, gemini, options = {}) {
-  const targetQuota = Number(options.targetQuota || options.quota || 200);
-  const subjects = options.subjects || [
-    'Mathematics',
-    'Reasoning',
-    'Banking Awareness',
-    'Technical',
-    'Current Affairs'
-  ];
-  const verifiedQuestions = [];
-  const usedHashes = new Set();
-  let duplicatesDiscarded = 0;
-  let batchRound = 0;
-  const MAX_ROUNDS = options.maxRounds || Math.max(60, Math.ceil(targetQuota / 5) * 4);
-  const autoInsert = options.autoInsert !== false;
-  const jobKey = options.jobKey || null;
-
-  while (verifiedQuestions.length < targetQuota && batchRound < MAX_ROUNDS) {
-    batchRound++;
-    const targetSubject = subjects[(batchRound - 1) % subjects.length];
-    const remainingNeeded = targetQuota - verifiedQuestions.length;
-    const batchNeeded = Math.min(10, remainingNeeded);
-
-    try {
-      const generatedList = await generateGeminiQuestionsForSubject(
-        gemini,
-        targetSubject,
-        batchNeeded,
-        options.retryOptions || {}
-      );
-
-      for (const rawGq of generatedList) {
-        if (verifiedQuestions.length >= targetQuota) break;
-
-        const gq = resolveOptionDuplicatesAndDistribute(rawGq);
-        const qRecord = {
-          question: gq.question,
-          question_hi: gq.question_hi || null,
-          option_a: gq.option_a,
-          option_b: gq.option_b,
-          option_c: gq.option_c,
-          option_d: gq.option_d,
-          option_a_hi: gq.option_a_hi || null,
-          option_b_hi: gq.option_b_hi || null,
-          option_c_hi: gq.option_c_hi || null,
-          option_d_hi: gq.option_d_hi || null,
-          correct_answer: gq.correct_answer,
-          explanation: gq.explanation || '',
-          explanation_hi: gq.explanation_hi || null,
-          subject: targetSubject,
-          topic: gq.topic || 'Syllabus Standard',
-          difficulty: gq.difficulty || 'Moderate',
-          language: gq.question_hi ? 'English + Hindi' : 'en',
-          exam: gq.exam || 'Competitive Exam Bank',
-          daily_job_key: jobKey
-        };
-
-        const val = validateQuestionDeterministic(qRecord, {
-          requireSource: targetSubject === 'Current Affairs'
-        });
-        if (!val.valid) continue;
-
-        if (targetSubject === 'Mathematics' && isSubjectStrictMatch(qRecord.subject, 'Reasoning')) continue;
-        if (targetSubject === 'Reasoning' && isSubjectStrictMatch(qRecord.subject, 'Mathematics')) continue;
-
-        const normHash = computeQuestionNormalizedHash(qRecord);
-        if (!normHash || usedHashes.has(normHash)) {
-          duplicatesDiscarded++;
-          continue;
-        }
-
-        const isDup = await isQuestionDuplicateInDb(sb, qRecord, usedHashes);
-        if (isDup) {
-          duplicatesDiscarded++;
-          continue;
-        }
-
-        usedHashes.add(normHash);
-        const approvedRecord = {
-          ...qRecord,
-          correct_answer: val.cleanedAnswer,
-          content_hash: normHash,
-          status: 'approved',
-          ai_review_status: 'auto_approved',
-          ai_confidence: 0.96,
-          created_at: new Date().toISOString()
-        };
-
-        if (sb && autoInsert) {
-          const { error: insErr } = await sb.from('questions').insert(approvedRecord);
-          if (insErr) {
-            console.warn('[Quota Generation Insert Warning]:', insErr.message);
-            continue;
-          }
-        }
-
-        verifiedQuestions.push(approvedRecord);
-      }
-    } catch (genErr) {
-      console.warn(`[Quota Gen Round ${batchRound} Warning] ${targetSubject}:`, genErr.message);
-      if (genErr?.isQuotaExhausted) {
-        console.warn(`[Quota Gen Limit] Quota exhausted, halting retry loop gracefully.`);
-        break;
-      }
-      continue;
-    }
-  }
-
-  return {
-    targetQuota,
-    delivered: verifiedQuestions.length,
-    duplicatesDiscarded,
-    shortage: Math.max(0, targetQuota - verifiedQuestions.length),
-    questions: verifiedQuestions,
-    ok: verifiedQuestions.length >= targetQuota
-  };
-}
-
 export {
   generateGeminiQuestionsForSubject,
   generateGeminiQuestionsForSubject as generateNewQuestionsWithGemini,
-  generateUniqueQuestionsQuotaLoop,
   runGeminiReviewBatch,
   loadLocalSeedQuestions
 };

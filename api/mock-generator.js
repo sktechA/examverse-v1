@@ -1,10 +1,7 @@
 import {
   getSupabaseAdmin,
-  getGeminiClient,
   isSubjectStrictMatch,
   isDependentContextMissing,
-  computeQuestionNormalizedHash,
-  isQuestionDuplicateInDb,
   verifyAdminAuth,
   handleCorsAndOptions,
   sanitizeObject,
@@ -13,7 +10,6 @@ import {
   checkRateLimit,
   getClientIp
 } from './_shared.js';
-import { generateUniqueQuestionsQuotaLoop } from './daily-scheduler.js';
 
 export const BLUEPRINT_PRESETS = {
   'IBPS RRB PO': {
@@ -49,31 +45,6 @@ export const BLUEPRINT_PRESETS = {
       { subject: 'Reasoning', count: 20 },
       { subject: 'Mathematics', count: 25 },
       { subject: 'Computer', count: 25 }
-    ]
-  },
-  'MP Sub Engineer Technical & GS': {
-    title: 'MP Sub Engineer Technical & General Studies CBT Mock',
-    total_questions: 100,
-    duration_minutes: 60,
-    marks_per_question: 1.0,
-    negative_marking: 0.0,
-    sections: [
-      { subject: 'Technical', count: 40 },
-      { subject: 'General Awareness', count: 20 },
-      { subject: 'Reasoning', count: 15 },
-      { subject: 'Mathematics', count: 15 },
-      { subject: 'Computer', count: 10 }
-    ]
-  },
-  'Banking & Financial Awareness': {
-    title: 'Banking & Financial Sector Special Mock',
-    total_questions: 50,
-    duration_minutes: 35,
-    marks_per_question: 1.0,
-    negative_marking: 0.25,
-    sections: [
-      { subject: 'Banking Awareness', count: 30 },
-      { subject: 'Current Affairs', count: 20 }
     ]
   },
   'MPPSC Prelims': {
@@ -132,28 +103,6 @@ export default async function handler(req, res) {
 
   try {
     const body = sanitizeObject(req.body || {});
-
-    // Strict 200 Unique Questions Quota Loop Handler
-    if (['generate_quota', 'generate_questions', 'strict_quota_loop'].includes(body.action) || body.generateQuota) {
-      const gemini = req.geminiClient || (process.env.GEMINI_AI_ENABLED === 'true' ? getGeminiClient() : null);
-      if (!gemini) {
-        return res.status(503).json({
-          ok: false,
-          error: 'Gemini AI service is not enabled or configured for dynamic generation'
-        });
-      }
-      const quotaResult = await generateUniqueQuestionsQuotaLoop(sb, gemini, {
-        targetQuota: body.quota || 200,
-        subjects: body.subjects || ['Mathematics', 'Reasoning', 'Banking Awareness', 'Technical', 'Current Affairs'],
-        retryOptions: { maxRetries: 3 }
-      });
-      return res.status(200).json({
-        ok: true,
-        action: 'generate_quota',
-        ...quotaResult
-      });
-    }
-
     const examTitle = sanitizeString(body.examTitle || 'IBPS RRB PO', 100);
     const action = body.action === 'publish' ? 'publish' : 'preview';
     const rawMockCount = Number(body.mockCount || 1);
@@ -181,7 +130,7 @@ export default async function handler(req, res) {
     if (poolErr) throw poolErr;
 
     // Never let malformed/duplicate records reach a candidate mock.
-    const seenQuestionHashes = new Set();
+    const seenQuestionKeys = new Set();
     const allApproved = (approvedPool || []).filter(q => {
       const answer = String(q.correct_answer || '').trim().toUpperCase().match(/^[ABCD]$/)?.[0] || '';
       const fieldsComplete = [q.question, q.option_a, q.option_b, q.option_c, q.option_d].every(v => String(v || '').trim());
@@ -189,9 +138,9 @@ export default async function handler(req, res) {
       const opts = [q.option_a, q.option_b, q.option_c, q.option_d].map(x => String(x).toLowerCase().trim());
       if (new Set(opts).size < 4) return false;
       if (isDependentContextMissing(q.question)) return false;
-      const normHash = computeQuestionNormalizedHash(q);
-      if (!normHash || seenQuestionHashes.has(normHash)) return false;
-      seenQuestionHashes.add(normHash);
+      const key = String(q.question || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!key || seenQuestionKeys.has(key)) return false;
+      seenQuestionKeys.add(key);
       return true;
     });
     const generatedMocks = [];
@@ -322,5 +271,3 @@ export default async function handler(req, res) {
     });
   }
 }
-
-export { generateUniqueQuestionsQuotaLoop };

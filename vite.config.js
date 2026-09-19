@@ -148,28 +148,5 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 3000,
     allowedHosts: 'all'
-  },
-  build: {
-    chunkSizeWarningLimit: 1500,
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('xlsx')) {
-              return 'vendor-xlsx';
-            }
-            if (id.includes('lucide-react')) {
-              return 'vendor-icons';
-            }
-            if (id.includes('@supabase')) {
-              return 'vendor-supabase';
-            }
-            if (id.includes('react') || id.includes('react-dom')) {
-              return 'vendor-react';
-            }
-          }
-        }
-      }
-    }
   }
 });

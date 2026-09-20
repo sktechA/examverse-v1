@@ -11,15 +11,12 @@ export default function ExamRecoveryModal({
   onContinue,
   onDecline,
   supabase,
-  session,
-  lang = 'en'
+  session
 }) {
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   if (!recoverySession) return null;
-
-  const isHi = lang === 'hi';
 
   const exam = recoverySession.exam || {};
   const questions = Array.isArray(recoverySession.questions) ? recoverySession.questions : [];
@@ -169,7 +166,7 @@ export default function ExamRecoveryModal({
             }}
           >
             <AlertCircle size={13} />
-            {isHi ? 'अधूरा टेस्ट रिकवरी' : 'UNSUBMITTED EXAM RECOVERY'}
+            UNSUBMITTED EXAM RECOVERY
           </span>
           <span style={{ fontSize: '11px', color: '#94a3b8' }}>
             {formatLastActive(recoverySession.last_active_at)}
@@ -178,10 +175,10 @@ export default function ExamRecoveryModal({
 
         {/* Prompt */}
         <h2 style={{ fontSize: '21px', fontWeight: 800, color: '#0f172a', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
-          {isHi ? 'आपकी पिछली परीक्षा बीच में रुक गई थी।' : 'Your previous exam was interrupted.'}
+          Your previous exam was interrupted.
         </h2>
         <p style={{ margin: '0 0 20px', color: '#64748b', fontSize: '14px', lineHeight: 1.5 }}>
-          {isHi ? 'क्या आप वहीं से जारी रखना चाहते हैं जहाँ आपने छोड़ा था?' : 'Would you like to continue from where you left off?'}
+          Would you like to continue from where you left off?
         </p>
 
         {/* Exam Snapshot Card */}
@@ -277,7 +274,7 @@ export default function ExamRecoveryModal({
             }}
           >
             <Play size={16} fill="currentColor" />
-            {isHi ? `प्रश्न ${currentQIndex} से परीक्षा जारी रखें` : `Continue Exam from Question ${currentQIndex}`}
+            Continue Exam from Question {currentQIndex}
           </button>
 
           <button
@@ -296,20 +293,14 @@ export default function ExamRecoveryModal({
             }}
           >
             <CheckCircle2 size={16} style={{ color: '#64748b' }} />
-            {busy ? (isHi ? 'सबमिट एवं मूल्यांकन हो रहा है...' : 'Submitting & Evaluating...') : (isHi ? 'अस्वीकार करें एवं सबमिट करें (अंतिम स्कोर देखें)' : 'Decline & Submit (View Final Score)')}
+            {busy ? 'Submitting & Evaluating...' : 'Decline & Submit (View Final Score)'}
           </button>
         </div>
 
         <p style={{ margin: '14px 0 0', textAlign: 'center', fontSize: '11px', color: '#94a3b8' }}>
-          {isHi ? (
-            <>जारी रखें चुनने पर आपका शेष समय और उत्तर पुनः बहाल हो जाएंगे।</>
-          ) : (
-            <>
-              Selecting <b>Continue</b> restores your exact remaining time and answered questions.
-              <br />
-              Selecting <b>Decline</b> submits your answered questions and shows your score breakdown.
-            </>
-          )}
+          Selecting <b>Continue</b> restores your exact remaining time and answered questions.
+          <br />
+          Selecting <b>Decline</b> submits your answered questions and shows your score breakdown.
         </p>
       </div>
     </div>

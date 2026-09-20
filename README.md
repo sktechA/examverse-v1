@@ -1,33 +1,36 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# SKTech Exam Portal — Vercel Hobby Safe
 
-# Run and deploy your AI Studio app
+SKTech Exam Portal is a Vite/React + Supabase + Google Gemini application.
 
-This contains everything you need to run your app locally.
+## Production architecture
 
-View your app in AI Studio: https://ai.studio/apps/982a76ab-9650-43aa-9e27-be95d19411fa
+- Vercel serves the React/Vite frontend.
+- Vercel exposes **one** Serverless Function at `api/[...path].js`.
+- Existing API URLs such as `/api/ai-review`, `/api/mock-generator`, `/api/daily-scheduler`, etc. are routed through that single gateway.
+- Actual handlers live under `server/api/` and are not counted by Vercel as separate Serverless Functions.
+- Supabase Edge Functions under `supabase/functions/` are independent of Vercel's function-count limit.
+- Production scheduling uses the Vercel cron entry in `vercel.json`.
 
-## Run Locally
+## Required server environment variables
 
-**Prerequisites:**  Node.js
+- `SUPABASE_URL`
+- `SUPABASE_SECRET_KEY` (or `SUPABASE_SERVICE_ROLE_KEY`)
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `GEMINI_API_KEY`
+- `GEMINI_REVIEW_MODEL_ID` (optional)
+- `ADMIN_AUTH_EMAIL` or `VITE_ADMIN_AUTH_EMAIL`
+- `CRON_SECRET` (recommended)
 
+Never commit real secrets. `.env` files are ignored by Git.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Local development
 
+```bash
+npm install
+npm run check:functions
+npm run build
+npm run dev
+```
 
-## V18.3 production deployment fix
-- Automation settings reload now maps database field names back to the admin UI fields.
-- Question TXT parser now distinguishes numbered questions from numbered options and requires strict option labels.
-- First numbered question is no longer skipped when no active question exists.
-- `Answer:` is no longer misread as option A.
-- Letter options no longer retain the delimiter (`A. text` -> `text`).
-- Approved mock generation filters incomplete/duplicate records before candidate delivery.
-- Daily scheduler consumes approved database inventory before invoking Gemini, reducing unnecessary Gemini calls/timeouts.
-- Removed the legacy `node:url` monkey-patch and all `url.parse()` usage from the shared server runtime.
-- Kept the production question-integrity API deployed; only the local exhaustive test runner remains excluded from Vercel Functions.
-- No production deployment is performed by this package change.
+The production function count must remain at `1/12`.

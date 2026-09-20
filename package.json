@@ -6,11 +6,10 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 3000",
     "build": "vite build",
-    "lint": "node --check api/*.js vite.config.js",
+    "lint": "node --check vite.config.js api/*.js server/api/*.js",
     "preview": "vite preview",
-    "test": "node api/question-integrity-test.js",
-    "test:integrity": "node api/question-integrity-test.js",
-    "test:all": "node api/test-all-functions.js"
+    "prebuild": "node scripts-check-vercel-functions.mjs",
+    "check:functions": "node scripts-check-vercel-functions.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.22.0",
@@ -22,9 +21,5 @@
     "vite": "^8.3.0",
     "xlsx": "^0.18.5"
   },
-  "devDependencies": {},
-  "allowScripts": {
-    "@google/genai": true,
-    "protobufjs": true
-  }
+  "devDependencies": {}
 }

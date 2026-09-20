@@ -27,7 +27,7 @@ export default function DailyAutomation({ supabase, session }) {
       daily_question_target: 1000,
       daily_ca_target: 150,
       auto_approval_threshold: 0.93,
-      gemini_ai_enabled: false,
+      gemini_ai_enabled: true,
       daily_scheduler_enabled: true,
       synthesis_mode_enabled: false,
       preferred_ai_model: 'gemini-3.8-flash',
@@ -340,14 +340,12 @@ export default function DailyAutomation({ supabase, session }) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ force: true })
+        body: JSON.stringify({ force: true, enableAi: true })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Job failed');
       setMsg(
-        `Job Completed! CA Added: ${data.current_affairs_added || 0}, Questions Validated: ${
-          data.questions_validated || 0
-        }, Approved: ${data.questions_approved || 0}, Mocks Created: ${data.mocks_generated || 0}`
+        `Job Completed! CA Added: ${data.current_affairs || 0}, Questions Delivered: ${data.actual_delivered || 0}/${data.target || 0}, Approved: ${data.approved_count || 0}, Pending Review: ${data.pending_review || 0}, Mocks Created: ${data.mocks_generated || 0}`
       );
       await loadData();
     } catch (e) {
@@ -375,7 +373,8 @@ export default function DailyAutomation({ supabase, session }) {
         if (!res.ok && res.status !== 207) throw new Error(`${subject}: ${data.error || 'generation failed'}`);
         results.push(`${subject} ${data.inserted || 0}/100`);
         if ((data.inserted || 0) < 100) {
-          setMsg(`${subject} completed ${data.inserted || 0}/100. Pipeline stopped safely; fix/retry this subject before moving on.`);
+          const detail = data.insert_errors?.length ? ` DB error: ${data.insert_errors[0]}` : (data.error || 'Generation/rejection issue');
+          setMsg(`${subject} completed ${data.inserted || 0}/100. ${detail} Pipeline stopped safely; fix/retry this subject before moving on.`);
           break;
         }
       }

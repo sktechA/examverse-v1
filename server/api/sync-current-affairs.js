@@ -153,11 +153,21 @@ async function researchSixMonthsWithGemini(gemini, sb, jobKey) {
   );
   const parsed = cleanJsonParse(response.text || '{}');
   const items = Array.isArray(parsed.items) ? parsed.items : [];
+  const groundingChunks = response?.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+  const groundingWeb = groundingChunks
+    .map((chunk, index) => ({ index, uri: String(chunk?.web?.uri || '').trim(), title: String(chunk?.web?.title || '').trim() }))
+    .filter(x => /^https?:\/\//i.test(x.uri));
   let added = 0;
   for (const item of items.slice(0, 80)) {
     const title = String(item.title || '').trim();
     const summary = String(item.summary || '').trim();
-    const sourceUrl = String(item.source_url || '').trim();
+    let sourceUrl = String(item.source_url || '').trim();
+    let sourceName = String(item.source_name || 'Gemini web research').trim();
+    if (!/^https?:\/\//i.test(sourceUrl)) {
+      const idx = Number(item.source_index);
+      const grounded = Number.isInteger(idx) ? groundingWeb.find(x => x.index === idx) : null;
+      if (grounded) { sourceUrl = grounded.uri; if (!item.source_name) sourceName = grounded.title || sourceName; }
+    }
     if (!title || !summary || !/^https?:\/\//i.test(sourceUrl)) continue;
     const externalId = `gemini6m:${crypto.createHash('sha256').update(`${title}|${sourceUrl}`).digest('hex')}`;
     const { data: existing } = await sb.from('current_affairs').select('id').eq('external_id', externalId).maybeSingle();
@@ -167,7 +177,7 @@ async function researchSixMonthsWithGemini(gemini, sb, jobKey) {
       external_id: externalId,
       title: title.slice(0,280),
       summary: summary.slice(0,1800),
-      source_name: String(item.source_name || 'Gemini web research').slice(0,120),
+      source_name: sourceName.slice(0,120),
       source_url: sourceUrl,
       category: String(item.category || 'General Current Affairs').slice(0,120),
       subject: 'Current Affairs',

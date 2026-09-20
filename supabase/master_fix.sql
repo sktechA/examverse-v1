@@ -20,3 +20,12 @@ ON public.exam_questions FOR SELECT TO authenticated
 USING (EXISTS (SELECT 1 FROM public.exams e WHERE e.id=exam_questions.exam_id AND e.published=true AND e.status='published'));
 
 
+
+-- Public candidate landing page: expose only scheduled published exam metadata.
+-- This does not expose candidate data or draft/private exams.
+CREATE OR REPLACE VIEW public.published_exam_schedule AS
+SELECT id, title, description, duration_minutes, scheduled_start, scheduled_end, status, published, subject, exam_type
+FROM public.exams
+WHERE published = true AND status = 'published' AND scheduled_start IS NOT NULL;
+
+GRANT SELECT ON public.published_exam_schedule TO anon, authenticated;

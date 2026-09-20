@@ -142,6 +142,27 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
   const startedAtRef = useRef(startedAt);
   startedAtRef.current = startedAt;
 
+  const examRootRef = useRef(null);
+
+  useEffect(() => {
+    const active = !loading && !submitted && questions.length > 0;
+    if (active) {
+      document.body.classList.add('exam-active');
+      const root = examRootRef.current;
+      if (root && root.requestFullscreen) {
+        root.requestFullscreen().catch(() => {});
+      }
+    } else {
+      document.body.classList.remove('exam-active');
+    }
+    return () => {
+      document.body.classList.remove('exam-active');
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
+  }, [loading, submitted, questions.length]);
+
   const getStorageKey = () => `sktech_active_exam_${session?.user?.id || 'candidate'}`;
 
   const persistActiveSession = (customTime, customAnswers, customReview, customQ, customLang) => {
@@ -803,8 +824,8 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
   ].filter(x => x[1]);
 
   return (
-    <div className="modal-bg">
-      <div className="mock">
+    <div className="modal-bg exam-mode">
+      <div ref={examRootRef} className="mock exam-mode">
         <div className="mock-head">
           <div>
             <b>{exam.title || exam.name}</b>

@@ -17,7 +17,8 @@ import {
   Trash2,
   AlertOctagon,
   X,
-  Check
+  Check,
+  Sparkles
 } from 'lucide-react';
 
 export default function DailyAutomation({ supabase, session }) {
@@ -356,6 +357,37 @@ export default function DailyAutomation({ supabase, session }) {
     }
   };
 
+  const runSubjectWiseGeneration = async () => {
+    const subjectList = ['Mathematics','Reasoning','Banking Awareness','General Awareness','MP GK','Computer','English'];
+    setRunningJob(true);
+    setMsg('Starting subject-wise Gemini generation: 100 valid questions per subject...');
+    try {
+      const token = (await supabase?.auth?.getSession())?.data?.session?.access_token || '';
+      const results = [];
+      for (const subject of subjectList) {
+        setMsg(`Generating ${subject}: target 100 fresh questions...`);
+        const res = await fetch('/api/daily-scheduler', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ mode: 'subject_batch', subject, target: 100, jobKey: `subject_${subject}_${new Date().toISOString().slice(0,10)}` })
+        });
+        const data = await res.json();
+        if (!res.ok && res.status !== 207) throw new Error(`${subject}: ${data.error || 'generation failed'}`);
+        results.push(`${subject} ${data.inserted || 0}/100`);
+        if ((data.inserted || 0) < 100) {
+          setMsg(`${subject} completed ${data.inserted || 0}/100. Pipeline stopped safely; fix/retry this subject before moving on.`);
+          break;
+        }
+      }
+      setMsg(`Subject-wise generation finished: ${results.join(' · ')}`);
+      await loadData();
+    } catch (e) {
+      setMsg(`Subject generation error: ${e.message}`);
+    } finally {
+      setRunningJob(false);
+    }
+  };
+
   const runRegressionTest = async () => {
     setRunningTest(true);
     setTestResult(null);
@@ -455,6 +487,10 @@ export default function DailyAutomation({ supabase, session }) {
             >
               <Play size={16} />
               {runningJob ? 'Processing 00:00 Job...' : 'Run Daily 00:00 Automation Now'}
+            </button>
+            <button className="btn light" disabled={runningJob} onClick={runSubjectWiseGeneration}>
+              <Sparkles size={16} />
+              {runningJob ? 'Generating Subject Batch...' : 'Generate 100 / Subject'}
             </button>
           </div>
         </div>

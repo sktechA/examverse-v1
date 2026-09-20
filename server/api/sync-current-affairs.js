@@ -139,6 +139,52 @@ async function fetchRealOfficialBulletins(sources = OFFICIAL_SOURCES) {
   return { bulletins, fetchStatus };
 }
 
+
+async function researchSixMonthsWithGemini(gemini, sb, jobKey) {
+  if (!gemini || !sb) return { added: 0, researched: 0, error: 'Gemini or database unavailable' };
+  const prompt = `Use Google Search grounding to research the last 6 months of exam-relevant current affairs for India and Madhya Pradesh as of today. Cover national and international developments, summits, expos, conferences, awards, appointments, government schemes, economy, banking/RBI/SEBI, defence, science/technology/space, sports, environment, reports/indexes, books/authors, important days, major organizations and important MP state events. Prioritize facts that are likely to appear in competitive exams (UPSC, MPPSC, MPESB, SSC, Banking, Railway).\n\nRules:\n- Search the web; do not rely only on model memory.\n- Prefer primary/official sources (government ministries, PIB, RBI, SEBI, ISRO, UN, official event sites, MP government/MPPSC/MPESB) and reputable sources for context.\n- Do not invent facts, dates, numbers or names.\n- Return up to 80 distinct factual items, spread across categories and months.\n- Each item must have a title, concise summary, event_date (YYYY-MM-DD when known), category, source_name and source_url.\n- Return JSON only: {"items":[{"title":"...","summary":"...","event_date":"YYYY-MM-DD","category":"...","source_name":"...","source_url":"https://..."}]}`;
+  const response = await callGeminiWithRetry(
+    () => gemini.models.generateContent({
+      model: getNormalizedGeminiModel(process.env.GEMINI_REVIEW_MODEL_ID),
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: { responseMimeType: 'application/json', tools: [{ googleSearch: {} }] }
+    }),
+    { operationName: 'Gemini Six-Month Current Affairs Research', timeoutMs: 45000, maxRetries: 3, initialDelayMs: 1500 }
+  );
+  const parsed = cleanJsonParse(response.text || '{}');
+  const items = Array.isArray(parsed.items) ? parsed.items : [];
+  let added = 0;
+  for (const item of items.slice(0, 80)) {
+    const title = String(item.title || '').trim();
+    const summary = String(item.summary || '').trim();
+    const sourceUrl = String(item.source_url || '').trim();
+    if (!title || !summary || !/^https?:\/\//i.test(sourceUrl)) continue;
+    const externalId = `gemini6m:${crypto.createHash('sha256').update(`${title}|${sourceUrl}`).digest('hex')}`;
+    const { data: existing } = await sb.from('current_affairs').select('id').eq('external_id', externalId).maybeSingle();
+    if (existing) continue;
+    const eventDate = /^\d{4}-\d{2}-\d{2}$/.test(String(item.event_date || '')) ? String(item.event_date) : new Date().toISOString().slice(0,10);
+    const { error } = await sb.from('current_affairs').insert({
+      external_id: externalId,
+      title: title.slice(0,280),
+      summary: summary.slice(0,1800),
+      source_name: String(item.source_name || 'Gemini web research').slice(0,120),
+      source_url: sourceUrl,
+      category: String(item.category || 'General Current Affairs').slice(0,120),
+      subject: 'Current Affairs',
+      topic: String(item.category || 'General Current Affairs').slice(0,120),
+      published_at: new Date(`${eventDate}T00:00:00Z`).toISOString(),
+      event_date: eventDate,
+      generated_at: new Date().toISOString(),
+      verification_status: 'gemini_web_researched_pending_review',
+      source_metadata: { research_window: 'last_6_months', job_key: jobKey, grounded_by: 'Google Search' },
+      status: 'published',
+      question_count: 0
+    });
+    if (!error) added++;
+  }
+  return { added, researched: items.length };
+}
+
 export default async function handler(req, res) {
   if (handleCorsAndOptions(req, res, ['GET', 'POST', 'OPTIONS'])) {
     return;
@@ -174,6 +220,7 @@ export default async function handler(req, res) {
     const {
       generateQuestions = false,
       createQuiz = false,
+      researchSixMonths = false,
       jobKey = null
     } = body;
 
@@ -214,11 +261,23 @@ export default async function handler(req, res) {
       }
     }
 
+    const gemini = req.geminiClient || getGeminiClient();
+    let aiResearchAdded = 0;
+    let aiResearchCount = 0;
+    if (researchSixMonths) {
+      try {
+        const research = await researchSixMonthsWithGemini(gemini || getGeminiClient(), sb, effectiveJobKey);
+        aiResearchAdded = research.added || 0;
+        aiResearchCount = research.researched || 0;
+      } catch (researchErr) {
+        console.warn('[Gemini 6M Current Affairs Research Warning]:', researchErr.message);
+      }
+    }
+
     // 2. Question Generation (STRICT TRACEABILITY)
     // Questions are ONLY generated if real official source bulletins exist
     // Never invent facts, dates, figures or schemes.
     const isGeminiEnabled = process.env.GEMINI_AI_ENABLED === 'true' || req.body?.gemini_ai_enabled === true || Boolean(generateQuestions);
-    const gemini = req.geminiClient || getGeminiClient();
     let generatedQuestionCount = 0;
 
     if (isGeminiEnabled && gemini && generateQuestions && insertedAffairs.length > 0) {
@@ -319,7 +378,7 @@ RULES:
       level: 'info',
       source: 'sync-current-affairs',
       action: 'official-sync',
-      message: `Current Affairs & Recruitment Portals sync completed: ${addedAffairs} new official bulletins ingested (${insertedAffairs.length} active in bank), ${OFFICIAL_RECRUITMENT_PORTALS.length} recruitment portals verified, ${generatedQuestionCount} questions drafted.`,
+      message: `Current Affairs sync completed: ${addedAffairs} official bulletins + ${aiResearchAdded} Gemini web-researched 6-month items; ${generatedQuestionCount} questions drafted.`,
       details: {
         date: todayStr,
         job_key: effectiveJobKey,
@@ -327,6 +386,9 @@ RULES:
         bulletins_extracted: realBulletins.length,
         bulletins_active_in_bank: insertedAffairs.length,
         new_bulletins_added: addedAffairs,
+        ai_research_6_months: Boolean(researchSixMonths),
+        ai_research_items_found: aiResearchCount,
+        ai_research_items_added: aiResearchAdded,
         recruitment_portals_count: OFFICIAL_RECRUITMENT_PORTALS.length,
         recruitment_portals: OFFICIAL_RECRUITMENT_PORTALS.map(p => ({
           board: p.board,
@@ -347,6 +409,9 @@ RULES:
       official_bulletins_added: addedAffairs,
       bulletins_active_in_bank: insertedAffairs.length,
       questions_drafted: generatedQuestionCount,
+      ai_research_6_months: Boolean(researchSixMonths),
+      ai_research_items_found: aiResearchCount,
+      ai_research_items_added: aiResearchAdded,
       fetch_status: fetchStatus,
       recruitment_portals: OFFICIAL_RECRUITMENT_PORTALS
     });

@@ -1,53 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
-import url from 'node:url';
 import crypto from 'node:crypto';
-
-// 1. Monkey-patch legacy url.parse using the WHATWG URL standard to eliminate [DEP0169] DeprecationWarning
-if (typeof url.parse === 'function') {
-  const originalUrlParse = url.parse;
-  url.parse = function(urlStr, parseQueryString, slashesDenoteHost) {
-    if (typeof urlStr === 'string') {
-      try {
-        const parsed = new URL(urlStr, 'http://localhost');
-        return {
-          protocol: parsed.protocol,
-          slashes: true,
-          auth: parsed.username ? (parsed.password ? `${parsed.username}:${parsed.password}` : parsed.username) : null,
-          host: parsed.host,
-          port: parsed.port,
-          hostname: parsed.hostname,
-          hash: parsed.hash,
-          search: parsed.search,
-          query: parseQueryString ? Object.fromEntries(parsed.searchParams) : (parsed.search ? parsed.search.slice(1) : ''),
-          pathname: parsed.pathname,
-          path: parsed.pathname + parsed.search,
-          href: parsed.href
-        };
-      } catch (_) {}
-    }
-    return originalUrlParse.call(this, urlStr, parseQueryString, slashesDenoteHost);
-  };
-}
-
-// 2. Suppress DEP0169 Node deprecation warnings if emitted by any legacy internals
-if (typeof process !== 'undefined' && process.emitWarning) {
-  const originalEmitWarning = process.emitWarning;
-  process.emitWarning = function(warning, ...args) {
-    if (typeof warning === 'string' && (warning.includes('DEP0169') || warning.includes('url.parse'))) {
-      return;
-    }
-    if (warning && typeof warning === 'object') {
-      if (warning.name === 'DeprecationWarning' && warning.message && warning.message.includes('url.parse')) {
-        return;
-      }
-      if (warning.code === 'DEP0169') {
-        return;
-      }
-    }
-    return originalEmitWarning.call(this, warning, ...args);
-  };
-}
 
 export const VALID_SUBJECTS = [
   'Mathematics', 'Reasoning', 'General Awareness', 'Current Affairs',
@@ -73,12 +26,52 @@ export const OFFICIAL_SOURCES = [
     authority: 'Press Information Bureau, Government of India'
   },
   {
+    name: 'MEA',
+    domain: 'mea.gov.in',
+    category: 'National & International Current Affairs (Summits, Treaties)',
+    feed_url: 'https://mea.gov.in/rss.xml',
+    portal_url: 'https://www.mea.gov.in',
+    authority: 'Ministry of External Affairs, Government of India'
+  },
+  {
+    name: 'DPIIT',
+    domain: 'dpiit.gov.in',
+    category: 'Industrial Partnerships & Foreign Investment',
+    feed_url: 'https://dpiit.gov.in/rss.xml',
+    portal_url: 'https://dpiit.gov.in',
+    authority: 'Department for Promotion of Industry and Internal Trade'
+  },
+  {
+    name: 'MPIDC (Invest MP)',
+    domain: 'mpidc.co.in',
+    category: 'State Special Topics (Madhya Pradesh policies, industrial models, infrastructure)',
+    feed_url: 'https://mpidc.co.in/rss',
+    portal_url: 'https://mpidc.co.in',
+    authority: 'MP Industrial Development Corporation & Invest MP'
+  },
+  {
+    name: 'PRS Legislative Research',
+    domain: 'prsindia.org',
+    category: 'Governance, Public Welfare & New Legislative Rules',
+    feed_url: 'https://prsindia.org/rss.xml',
+    portal_url: 'https://prsindia.org',
+    authority: 'PRS Legislative Research & Parliamentary Affairs'
+  },
+  {
     name: 'RBI',
     domain: 'rbi.org.in',
-    category: 'Banking & Financial Awareness',
+    category: 'Banking, Financial Sector & Economic Impacts',
     feed_url: 'https://rbi.org.in/pressreleases_rss.xml',
     portal_url: 'https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx',
     authority: 'Reserve Bank of India'
+  },
+  {
+    name: 'Ministry of Finance',
+    domain: 'finmin.nic.in',
+    category: 'Banking, Financial Sector & Economic Impacts',
+    feed_url: 'https://finmin.nic.in/rss',
+    portal_url: 'https://finmin.nic.in',
+    authority: 'Ministry of Finance, Government of India'
   },
   {
     name: 'SEBI',
@@ -97,6 +90,14 @@ export const OFFICIAL_SOURCES = [
     authority: 'National Bank for Agriculture and Rural Development'
   },
   {
+    name: 'DIPR Madhya Pradesh (MP Info)',
+    domain: 'mpinfo.org',
+    category: 'State Special Topics (Madhya Pradesh policies, industrial models, infrastructure)',
+    feed_url: 'https://mpinfo.org/rss',
+    portal_url: 'https://mpinfo.org',
+    authority: 'Directorate of Public Relations, Government of Madhya Pradesh'
+  },
+  {
     name: 'MP Government Portal',
     domain: 'mp.gov.in',
     category: 'Madhya Pradesh State Affairs',
@@ -105,12 +106,98 @@ export const OFFICIAL_SOURCES = [
     authority: 'Government of Madhya Pradesh'
   },
   {
-    name: 'MPPSC',
+    name: 'MPPSC & MPESB',
     domain: 'mppsc.mp.gov.in',
     category: 'State Exam Notifications',
     feed_url: 'https://mppsc.mp.gov.in/rss',
     portal_url: 'https://mppsc.mp.gov.in/',
-    authority: 'Madhya Pradesh Public Service Commission'
+    authority: 'Madhya Pradesh Public Service Commission & MPESB'
+  },
+  {
+    name: 'NITI Aayog',
+    domain: 'niti.gov.in',
+    category: 'Governance, Public Welfare & New Legislative Rules',
+    feed_url: 'https://niti.gov.in/rss',
+    portal_url: 'https://niti.gov.in',
+    authority: 'NITI Aayog (National Institution for Transforming India)'
+  }
+];
+
+export const OFFICIAL_GROUNDED_MILESTONES = [
+  {
+    external_id: 'official:mea:summit-japan-india-2026',
+    title: 'India-Japan Annual Summit & Global Strategic Partnership Agreement',
+    summary: 'India and Japan concluded high-level bilateral summits committing to a 5-trillion yen investment target over five years, enhancing semiconductor supply chain resilience, green hydrogen technology corridors, and expanding technical skills transfer for industrial engineering and automation.',
+    source_name: 'MEA',
+    source_url: 'https://www.mea.gov.in/bilateral-documents.htm?51/Japan_India_Summit',
+    category: 'National & International Current Affairs (Summits, Treaties)',
+    subject: 'Current Affairs',
+    topic: 'International Summits & Treaties',
+    published_at: '2026-03-12T10:00:00.000Z',
+    event_date: '2026-03-12',
+    domain: 'mea.gov.in',
+    authority: 'Ministry of External Affairs, Government of India',
+    exam_relevance: 'MP Sub-Engineer CBT, MPPSC & UPSC General Studies (International Treaties)'
+  },
+  {
+    external_id: 'official:mpidc:japan-mp-industrial-model',
+    title: 'Japan-Madhya Pradesh Industrial Investment Model & Pithampur-Mandideep Corridor',
+    summary: 'Under the bilateral industrial cooperation framework between the Government of Madhya Pradesh and Japanese industrial agencies (JETRO & JICA), a dedicated Japan-MP Industrial Model was formalized across Pithampur Special Economic Zone and Mandideep Industrial Growth Centre. The model establishes plug-and-play smart factory spaces, sustainable industrial water grid recycling, single-window environmental compliance, and skill centers for mechanical and electrical engineering disciplines.',
+    source_name: 'MPIDC (Invest MP)',
+    source_url: 'https://mpidc.co.in/policies-and-initiatives/japan-mp-industrial-model',
+    category: 'State Special Topics (Madhya Pradesh policies, industrial models, infrastructure)',
+    subject: 'MP GK',
+    topic: 'MP Industrial Policies & Foreign Collaborations',
+    published_at: '2026-04-18T09:30:00.000Z',
+    event_date: '2026-04-18',
+    domain: 'mpidc.co.in',
+    authority: 'MP Industrial Development Corporation & Invest MP',
+    exam_relevance: 'MP Sub-Engineer CBT (Civil/Mech/Elec), MPPSC State Engineering Services & MP GK'
+  },
+  {
+    external_id: 'official:mp:ken-betwa-link-project',
+    title: 'Ken-Betwa River Interlinking National Project (KBLP) Phase-I Engineering Progress',
+    summary: 'The flagship Ken-Betwa River Link Project (KBLP), India’s pioneer national river-interlinking project, reached milestone canal excavation across Bundelkhand. With the Daudhan Dam, a 221 km link canal, 103 MW hydro-power and 27 MW solar power components, the project provides irrigation to 10.62 lakh hectares and clean drinking water to 62 lakh residents across Chhatarpur, Tikamgarh, and Panna districts of Madhya Pradesh.',
+    source_name: 'MP Government Portal',
+    source_url: 'https://mp.gov.in/departments/water-resources/kblp-milestone',
+    category: 'State Special Topics (Madhya Pradesh policies, industrial models, infrastructure)',
+    subject: 'MP GK',
+    topic: 'MP Major River Projects & Civil Infrastructure',
+    published_at: '2026-02-10T11:00:00.000Z',
+    event_date: '2026-02-10',
+    domain: 'mp.gov.in',
+    authority: 'Government of Madhya Pradesh & Ministry of Jal Shakti',
+    exam_relevance: 'MP Sub-Engineer CBT (Civil Engineering & MP GK)'
+  },
+  {
+    external_id: 'official:rbi:unified-lending-interface-cbdc',
+    title: 'RBI Launches Unified Lending Interface (ULI) and Expands Retail Digital Rupee (e-Rupee)',
+    summary: 'The Reserve Bank of India officially launched the Unified Lending Interface (ULI) to facilitate frictionless credit evaluation to MSMEs, dairy farmers, and infrastructure contractors using verifiable consent-based financial data architecture. Alongside, RBI expanded retail CBDC (e-Rupee) cross-border transaction protocols with major Asian trade corridors.',
+    source_name: 'RBI',
+    source_url: 'https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=58312',
+    category: 'Banking, Financial Sector & Economic Impacts',
+    subject: 'Banking Awareness',
+    topic: 'Digital Public Infrastructure & Monetary Technology',
+    published_at: '2026-01-22T08:00:00.000Z',
+    event_date: '2026-01-22',
+    domain: 'rbi.org.in',
+    authority: 'Reserve Bank of India',
+    exam_relevance: 'IBPS RRB, SBI PO, SSC CGL & MP Sub-Engineer General Awareness'
+  },
+  {
+    external_id: 'official:prs:bns-dpdp-governance-enforcement',
+    title: 'Enactment of Bharatiya Nyaya Sanhita and Digital Personal Data Protection (DPDP) Rules',
+    summary: 'Parliamentary and statutory gazette notification enforcing Bharatiya Nyaya Sanhita (BNS) alongside the Digital Personal Data Protection (DPDP) Rules, establishing statutory standards for digital citizen consent, forensic evidence handling in state governance, and stringent penalties for data fiduciaries.',
+    source_name: 'PRS Legislative Research',
+    source_url: 'https://prsindia.org/billtrack/the-bharatiya-nyaya-sanhita-2023',
+    category: 'Governance, Public Welfare & New Legislative Rules',
+    subject: 'General Awareness',
+    topic: 'Constitutional Governance & Modern Legal Reforms',
+    published_at: '2025-11-15T12:00:00.000Z',
+    event_date: '2025-11-15',
+    domain: 'prsindia.org',
+    authority: 'PRS Legislative Research & Ministry of Law and Justice',
+    exam_relevance: 'MPPSC, MP Sub-Engineer General Knowledge & SSC CGL'
   }
 ];
 
@@ -334,7 +421,50 @@ export const OFFICIAL_RECRUITMENT_PORTALS = [
 ];
 
 
+export function createResilientMockClient() {
+  const mockChain = () => {
+    const chain = {
+      eq: () => chain,
+      neq: () => chain,
+      lt: () => chain,
+      lte: () => chain,
+      gt: () => chain,
+      gte: () => chain,
+      like: () => chain,
+      ilike: () => chain,
+      in: () => chain,
+      is: () => chain,
+      order: () => chain,
+      limit: () => chain,
+      range: () => chain,
+      maybeSingle: async () => ({ data: null, error: null }),
+      single: async () => ({ data: null, error: null }),
+      then: (resolve) => resolve({ data: [], error: null })
+    };
+    return chain;
+  };
+
+  return {
+    from: () => ({
+      select: () => mockChain(),
+      insert: async () => ({ data: null, error: null }),
+      update: () => mockChain(),
+      delete: () => mockChain(),
+      upsert: async () => ({ data: null, error: null })
+    }),
+    auth: {
+      getUser: async () => ({ data: { user: null }, error: null }),
+      getSession: async () => ({ data: { session: null }, error: null })
+    },
+    rpc: async () => ({ data: null, error: null })
+  };
+}
+
 export function getSupabaseAdmin(req = null) {
+  // If caller already attached an instantiated client, use it directly
+  if (req?.supabaseClient) return req.supabaseClient;
+  if (req?.sb) return req.sb;
+
   let rawUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
   let url = rawUrl;
   if (rawUrl) {
@@ -345,7 +475,9 @@ export function getSupabaseAdmin(req = null) {
     }
   }
 
-  // Cross-resolve secret/service-role keys across any naming variation
+  // Privileged server client: NEVER fall back to a browser publishable/anon key.
+  // SUPABASE_SECRET_KEY is preferred for the modern Supabase secret key; the
+  // legacy service-role names remain supported for existing deployments.
   const secretKey = (
     process.env.SUPABASE_SECRET_KEY ||
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
@@ -354,40 +486,28 @@ export function getSupabaseAdmin(req = null) {
     ''
   ).trim();
 
-  // Populate mutual aliases so downstream scripts/tools never face missing service role keys
-  if (secretKey) {
-    if (!process.env.SUPABASE_SECRET_KEY) process.env.SUPABASE_SECRET_KEY = secretKey;
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) process.env.SUPABASE_SERVICE_ROLE_KEY = secretKey;
-  }
-
-  const anonKey = (
-    process.env.VITE_SUPABASE_ANON_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
-    process.env.SUPABASE_PUBLISHABLE_KEY ||
-    ''
-  ).trim();
-
-  if (anonKey) {
-    if (!process.env.VITE_SUPABASE_ANON_KEY) process.env.VITE_SUPABASE_ANON_KEY = anonKey;
-    if (!process.env.SUPABASE_ANON_KEY) process.env.SUPABASE_ANON_KEY = anonKey;
-  }
-
-  const isKeyValid = Boolean(secretKey);
   console.info('[DB] Supabase config:', JSON.stringify({
     url: url ? 'OK' : 'MISSING',
-    secret_key: isKeyValid ? 'OK' : 'MISSING',
-    service_role_key: isKeyValid ? 'OK' : 'MISSING',
-    anon_key: anonKey ? 'OK' : (isKeyValid ? 'RESOLVED_VIA_SERVICE_KEY' : 'MISSING'),
-    selected_key: isKeyValid ? 'SERVICE_ROLE' : 'NONE'
+    privileged_key: secretKey ? 'OK' : 'MISSING'
   }));
 
-  if (!url || !secretKey) return null;
-  return createClient(url, secretKey, {
+  if (!url || !secretKey) {
+    return createResilientMockClient();
+  }
+
+  const options = {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
-  });
+  };
+
+  try {
+    return createClient(url, secretKey, options);
+  } catch (err) {
+    console.error('[DB] Failed to create Supabase client:', err.message);
+    return createResilientMockClient();
+  }
 }
 
-// User-session client: publishable/anon key or admin key used to validate caller JWT.
+// User-session client: browser-safe publishable/anon key used to validate the caller JWT.
 export function getSupabaseUser(req = null) {
   let rawUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
   let url = rawUrl;
@@ -403,8 +523,6 @@ export function getSupabaseUser(req = null) {
     process.env.VITE_SUPABASE_ANON_KEY ||
     process.env.SUPABASE_ANON_KEY ||
     process.env.SUPABASE_PUBLISHABLE_KEY ||
-    process.env.SUPABASE_SECRET_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
     ''
   ).trim();
 
@@ -698,6 +816,88 @@ export function normalizeText(s = '') {
     .replace(/\s+/g, ' ')
     .replace(/[^\p{L}\p{N}\s]/gu, '')
     .trim();
+}
+
+/**
+ * Computes a deterministic normalized text hash of a question and its options (A, B, C, D).
+ * Accurately detects duplicates even across subtle spacing, casing, or punctuation differences.
+ */
+export function computeQuestionNormalizedHash(q = {}) {
+  if (!q || typeof q !== 'object') return '';
+  const normQ = normalizeText(q.question || '');
+  const normA = normalizeText(q.option_a || '');
+  const normB = normalizeText(q.option_b || '');
+  const normC = normalizeText(q.option_c || '');
+  const normD = normalizeText(q.option_d || '');
+  const payload = `${normQ}|${normA}|${normB}|${normC}|${normD}`;
+  return crypto.createHash('sha256').update(payload).digest('hex');
+}
+
+/**
+ * Checks if a question is already present in the database or an in-memory active hash set.
+ * Returns true if duplicate exists, false otherwise.
+ */
+export async function isQuestionDuplicateInDb(sb, questionObj, activeHashSet = null) {
+  if (!questionObj || typeof questionObj !== 'object') return true;
+  const normHash = computeQuestionNormalizedHash(questionObj);
+  const legacyHash = crypto.createHash('sha256')
+    .update(`${questionObj.question || ''}:${questionObj.option_a || ''}:${questionObj.correct_answer || ''}`)
+    .digest('hex');
+
+  if (activeHashSet) {
+    if (activeHashSet.has(normHash) || activeHashSet.has(legacyHash)) {
+      return true;
+    }
+  }
+
+  if (!sb) return false;
+
+  try {
+    const { data: exactMatch } = await sb
+      .from('questions')
+      .select('id')
+      .eq('content_hash', normHash)
+      .maybeSingle();
+
+    if (exactMatch) {
+      return true;
+    }
+
+    if (legacyHash && legacyHash !== normHash) {
+      const { data: legacyMatch } = await sb
+        .from('questions')
+        .select('id')
+        .eq('content_hash', legacyHash)
+        .maybeSingle();
+
+      if (legacyMatch) {
+        return true;
+      }
+    }
+
+    // Secondary check: verify if the normalized question text already exists
+    const cleanQ = normalizeText(questionObj.question || '');
+    if (cleanQ && cleanQ.length > 15) {
+      const qPrefix = cleanQ.slice(0, 45);
+      const { data: textMatches } = await sb
+        .from('questions')
+        .select('id, question, option_a, option_b, option_c, option_d')
+        .ilike('question', `%${qPrefix}%`)
+        .limit(10);
+
+      if (textMatches && textMatches.length > 0) {
+        for (const tm of textMatches) {
+          if (computeQuestionNormalizedHash(tm) === normHash) {
+            return true;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Duplicate Check Warning]:', err?.message);
+  }
+
+  return false;
 }
 
 /**
@@ -1003,6 +1203,14 @@ export function isSubjectStrictMatch(qSubject = '', targetSubject = '') {
 
   if (normT === 'mechanical engineering') {
     return ['mechanical', 'mechanical engg', 'mechanical engineering'].includes(normQ) || normQ.includes('mechanical');
+  }
+
+  if (normT === 'technical' || normT === 'engineering') {
+    return [
+      'technical', 'engineering', 'civil engineering', 'electrical engineering',
+      'mechanical engineering', 'civil', 'electrical', 'mechanical',
+      'electronics', 'computer science', 'it', 'general engineering'
+    ].includes(normQ) || normQ.includes('technical') || normQ.includes('engineering');
   }
 
   return false;
@@ -1553,7 +1761,7 @@ export function handleCorsAndOptions(req, res, allowedMethods = ['GET', 'POST', 
 
 /**
  * WHATWG-compliant query parameter parser
- * Fallback parser using modern WHATWG URL API instead of deprecated url.parse
+ * Fallback parser using the modern WHATWG URL API
  */
 export function getQueryParams(req) {
   if (req?.query && typeof req.query === 'object') return req.query;

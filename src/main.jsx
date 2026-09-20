@@ -2,7 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {createClient} from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
-import {LayoutDashboard,BookOpen,ClipboardCheck,Search,Settings,LogOut,Clock3,Upload,Users,PlusCircle,Menu,X,ChevronDown,TrendingUp,Target,ShieldCheck,FileText,BarChart3,CalendarDays,Zap,ArrowUpRight,CheckCircle2,Eye,Activity,IndianRupee,Megaphone,Bell,UserCircle,Save,Lock,Mail,Smartphone,RefreshCw,ExternalLink,Database,Trash2,Edit3,Sparkles,Sliders,Languages,KeyRound,UserPlus,EyeOff} from 'lucide-react';
+import {LayoutDashboard,BookOpen,ClipboardCheck,Search,Settings,LogOut,Clock3,Upload,Users,PlusCircle,Menu,X,ChevronDown,TrendingUp,Target,ShieldCheck,FileText,BarChart3,CalendarDays,Zap,ArrowUpRight,CheckCircle2,Eye,Activity,IndianRupee,Megaphone,Bell,UserCircle,Save,Lock,Mail,Smartphone,RefreshCw,ExternalLink,Database,Trash2,Edit3,Sparkles,Sliders,Languages,KeyRound,UserPlus,EyeOff,Sun,Moon,Globe,Flame} from 'lucide-react';
 import './styles.css';
 
 import DailyAutomation from './components/DailyAutomation.jsx';
@@ -11,6 +11,7 @@ import MockModal from './components/MockModal.jsx';
 import ExamRecoveryModal from './components/ExamRecoveryModal.jsx';
 import SystemLogs from './components/SystemLogs.jsx';
 import { OFFICIAL_RECRUITMENT_PORTALS, EXPANDED_VACANCIES } from './data/recruitmentPortals.js';
+import { t } from './data/translations.js';
 
 const SUPABASE_URL=import.meta.env.VITE_SUPABASE_URL||'';
 const SUPABASE_ANON_KEY=import.meta.env.VITE_SUPABASE_ANON_KEY||'';
@@ -55,21 +56,213 @@ const exams=[
 const subjects=['Mathematics','Reasoning','General Awareness','Current Affairs','Banking Awareness','Financial Awareness','English','Hindi','Computer','General Science','Data Interpretation','Indian History','Indian Geography','Indian Polity','Indian Constitution','Indian Economy','Indian Culture','Environment & Ecology','MP GK','MP History','MP Geography','MP Polity','MP Economy','MP Culture','MP Tribes','MP Current Affairs','MP Government Schemes','Civil Engineering','Mechanical Engineering','Electrical Engineering','Electronics Engineering','Agriculture Engineering'];
 const vacancies = EXPANDED_VACANCIES;
 
+function ExamCountdownBanner({ onStartPractice, setPage, lang = 'en' }) {
+  const targetDate = new Date('2026-10-06T09:00:00+05:30');
+  const [timeLeft, setTimeLeft] = useState(() => {
+    const diff = Math.max(0, targetDate.getTime() - Date.now());
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+    const minutes = Math.floor((diff / (1000 * 60)) % 60);
+    const seconds = Math.floor((diff / 1000) % 60);
+    return { diff, days, hours, minutes, seconds };
+  });
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const diff = Math.max(0, targetDate.getTime() - Date.now());
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+      const minutes = Math.floor((diff / (1000 * 60)) % 60);
+      const seconds = Math.floor((diff / 1000) % 60);
+      setTimeLeft({ diff, days, hours, minutes, seconds });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="countdown-urgency-banner" id="mpesb-countdown-banner">
+      <div className="countdown-banner-left">
+        <div className="countdown-flame-icon">
+          <Flame size={24} />
+        </div>
+        <div className="countdown-banner-copy">
+          <div className="countdown-badge-pill">
+            <span className="live-dot" style={{ color: '#f59e0b' }}>●</span>
+            {t(lang, 'countdownBadge')}
+          </div>
+          <h2 className="countdown-banner-title">
+            {t(lang, 'countdownTitle', { days: timeLeft.days })}
+          </h2>
+          <p className="countdown-banner-sub">
+            {t(lang, 'countdownSub')}
+          </p>
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+        <div className="countdown-ticker" aria-label="Countdown timer">
+          <div className="countdown-ticker-unit">
+            <b>{String(timeLeft.days).padStart(2, '0')}</b>
+            <small>{t(lang, 'days')}</small>
+          </div>
+          <span className="countdown-ticker-sep">:</span>
+          <div className="countdown-ticker-unit">
+            <b>{String(timeLeft.hours).padStart(2, '0')}</b>
+            <small>{t(lang, 'hours')}</small>
+          </div>
+          <span className="countdown-ticker-sep">:</span>
+          <div className="countdown-ticker-unit">
+            <b>{String(timeLeft.minutes).padStart(2, '0')}</b>
+            <small>{t(lang, 'mins')}</small>
+          </div>
+          <span className="countdown-ticker-sep">:</span>
+          <div className="countdown-ticker-unit">
+            <b>{String(timeLeft.seconds).padStart(2, '0')}</b>
+            <small>{t(lang, 'secs')}</small>
+          </div>
+        </div>
+        <button
+          className="countdown-cta-btn"
+          id="banner-start-practice-btn"
+          onClick={() => {
+            if (onStartPractice) onStartPractice();
+            else if (setPage) setPage('exams');
+          }}
+        >
+          <Zap size={15} fill="currentColor" /> {t(lang, 'startPracticingNow')} <ArrowUpRight size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function HeaderControls({ theme, setTheme, lang, setLang }) {
+  const switchLang = (newLang) => {
+    if (typeof setLang === 'function') {
+      setLang(newLang);
+      try {
+        localStorage.setItem('sktech_lang', newLang);
+      } catch (_) {}
+    }
+  };
+
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+      {/* Language Switcher (English / हिंदी) */}
+      <div
+        className="lang-toggle-group"
+        role="group"
+        aria-label="Language selection"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          background: theme === 'dark' ? '#1e293b' : 'rgba(99, 102, 241, 0.08)',
+          border: '1px solid ' + (theme === 'dark' ? '#334155' : 'rgba(99, 102, 241, 0.22)'),
+          borderRadius: '10px',
+          padding: '3px 4px',
+          gap: '3px'
+        }}
+      >
+        <Globe size={13} style={{ color: theme === 'dark' ? '#94a3b8' : '#6366f1', marginLeft: 2, marginRight: 1 }} />
+        <button
+          type="button"
+          id="lang-btn-en"
+          aria-pressed={lang === 'en'}
+          onClick={() => switchLang('en')}
+          onTouchEnd={(e) => { e.preventDefault(); switchLang('en'); }}
+          style={{
+            border: 0,
+            background: lang === 'en' ? '#6366f1' : 'transparent',
+            color: lang === 'en' ? '#ffffff' : (theme === 'dark' ? '#94a3b8' : '#475569'),
+            fontWeight: lang === 'en' ? 800 : 600,
+            fontSize: '12px',
+            padding: '4px 10px',
+            borderRadius: '7px',
+            cursor: 'pointer',
+            transition: 'all 0.18s ease',
+            boxShadow: lang === 'en' ? '0 1px 4px rgba(99,102,241,0.35)' : 'none'
+          }}
+          title="Switch Dashboard to English"
+        >
+          English
+        </button>
+        <button
+          type="button"
+          id="lang-btn-hi"
+          aria-pressed={lang === 'hi'}
+          onClick={() => switchLang('hi')}
+          onTouchEnd={(e) => { e.preventDefault(); switchLang('hi'); }}
+          style={{
+            border: 0,
+            background: lang === 'hi' ? '#6366f1' : 'transparent',
+            color: lang === 'hi' ? '#ffffff' : (theme === 'dark' ? '#94a3b8' : '#475569'),
+            fontWeight: lang === 'hi' ? 800 : 600,
+            fontSize: '12px',
+            padding: '4px 10px',
+            borderRadius: '7px',
+            cursor: 'pointer',
+            transition: 'all 0.18s ease',
+            boxShadow: lang === 'hi' ? '0 1px 4px rgba(99,102,241,0.35)' : 'none'
+          }}
+          title="डैशबोर्ड को हिंदी में बदलें (Switch to Hindi)"
+        >
+          हिंदी
+        </button>
+      </div>
+
+      {/* Dark/Light Mode Toggle Switcher */}
+      <button
+        type="button"
+        id="theme-toggle-btn"
+        onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
+        title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+        aria-label="Toggle theme"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '36px',
+          height: '36px',
+          borderRadius: '10px',
+          border: '1px solid ' + (theme === 'dark' ? '#334155' : 'rgba(99, 102, 241, 0.22)'),
+          background: theme === 'dark' ? '#1e293b' : '#f8fafc',
+          color: theme === 'dark' ? '#fbbf24' : '#6366f1',
+          cursor: 'pointer',
+          transition: 'all 0.2s ease'
+        }}
+      >
+        {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+      </button>
+    </div>
+  );
+}
 
 function App(){
- useEffect(()=>{
-   const onError=e=>{logEvent('error',e.message||'Unhandled browser error',{source:'candidate-runtime',data:{filename:e.filename||'',line:e.lineno||0,col:e.colno||0}}).catch(()=>{})};
-   const onReject=e=>{logEvent('error',e.reason?.message||String(e.reason||'Unhandled promise rejection'),{source:'candidate-runtime',data:{type:'unhandledrejection'}}).catch(()=>{})};
-   window.addEventListener('error',onError);window.addEventListener('unhandledrejection',onReject);
-   return()=>{window.removeEventListener('error',onError);window.removeEventListener('unhandledrejection',onReject)};
- },[]);
- const [role,setRole]=useState(PORTAL_MODE==='admin'?'admin':'student'),
- [logged,setLogged]=useState(false),
- [page,setPage]=useState('dashboard'),
- [open,setOpen]=useState(false),
- [selected,setSelected]=useState(null),
- [session,setSession]=useState(null),
- [authChecking,setAuthChecking]=useState(true);
+  const [theme, setTheme] = useState(() => localStorage.getItem('sktech_theme') || 'light');
+  const [lang, setLang] = useState(() => localStorage.getItem('sktech_lang') || 'en');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.body.className = theme === 'dark' ? 'theme-dark' : 'theme-light';
+    localStorage.setItem('sktech_theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem('sktech_lang', lang);
+  }, [lang]);
+
+  useEffect(()=>{
+    const onError=e=>{logEvent('error',e.message||'Unhandled browser error',{source:'candidate-runtime',data:{filename:e.filename||'',line:e.lineno||0,col:e.colno||0}}).catch(()=>{})};
+    const onReject=e=>{logEvent('error',e.reason?.message||String(e.reason||'Unhandled promise rejection'),{source:'candidate-runtime',data:{type:'unhandledrejection'}}).catch(()=>{})};
+    window.addEventListener('error',onError);window.addEventListener('unhandledrejection',onReject);
+    return()=>{window.removeEventListener('error',onError);window.removeEventListener('unhandledrejection',onReject)};
+  },[]);
+  const [role,setRole]=useState(PORTAL_MODE==='admin'?'admin':'student'),
+  [logged,setLogged]=useState(false),
+  [page,setPage]=useState('dashboard'),
+  [open,setOpen]=useState(false),
+  [selected,setSelected]=useState(null),
+  [session,setSession]=useState(null),
+  [authChecking,setAuthChecking]=useState(true);
 
  useEffect(()=>{
    if(!supabase){setAuthChecking(false);return}
@@ -133,37 +326,561 @@ function App(){
  },[]);
  const logout=async()=>{if(supabase)await supabase.auth.signOut();setLogged(false);setSession(null);setRole(PORTAL_MODE==='admin'?'admin':'student');setPage('dashboard')};
  if(authChecking)return <div className="loading-screen"><Brand/><p>Connecting securely…</p></div>;
- if(!logged)return <Landing role={role} setRole={setRole} open={open} setOpen={setOpen} login={(ses,r)=>{setSession(ses||null);setRole(r||role);setLogged(true)}}/>;
- return <Shell role={role} page={page} setPage={setPage} logout={logout} selected={selected} setSelected={setSelected} session={session}/>;
+  if(!logged)return <Landing role={role} setRole={setRole} open={open} setOpen={setOpen} login={(ses,r)=>{setSession(ses||null);setRole(r||role);setLogged(true)}} theme={theme} setTheme={setTheme} lang={lang} setLang={setLang}/>;
+  return <Shell role={role} page={page} setPage={setPage} logout={logout} selected={selected} setSelected={setSelected} session={session} theme={theme} setTheme={setTheme} lang={lang} setLang={setLang}/>;
 }
 function Brand({dark=false}){return <div className={dark?'brand dark-brand':'brand'}><span className="logo"><Zap size={19} fill="currentColor"/></span><div><b>SKTech Exam Portal</b><small>Prepare Smart. Perform Better.</small></div></div>}
-function Landing({role,setRole,open,setOpen,login}){return <div className="landing"><header className="topbar"><Brand/><div className="top-actions">{PORTAL_MODE==='admin'?<button className="btn dark" onClick={()=>{setRole('admin');setOpen(true)}}>Admin Login</button>:<button className="btn ghost" onClick={()=>{setRole('student');setOpen(true)}}>Candidate Login</button>}</div></header><main className="hero"><div className="hero-copy"><span className="pill"><Zap size={13}/> SMART EXAM PREPARATION</span><h1>One portal.<br/><em>Every exam.</em></h1><p>Subject-wise practice, exam-wise mocks, live exams and personal performance analytics.</p><div className="hero-buttons">{PORTAL_MODE==='admin'?<button className="btn primary" onClick={()=>{setRole('admin');setOpen(true)}}>Admin Login <ArrowUpRight size={17}/></button>:<><button className="btn primary" onClick={()=>{setRole('student');setOpen(true)}}>Start Preparing <ArrowUpRight size={17}/></button><button className="btn light" onClick={()=>{setRole('student');setOpen(true)}}>Candidate Login</button></>}</div></div><div className="hero-card"><div className="hero-card-head"><span>Smart Performance</span><span className="live-dot">● LIVE</span></div><div className="score">Ready<small>real performance appears after your first attempt</small></div><div className="ready-list"><div>✓ Live question bank</div><div>✓ Real score tracking</div><div>✓ Personalised analytics</div></div></div></main><section className="feature-grid">{[[BookOpen,'Subject Practice','Easy · Moderate · Hard'],[ClipboardCheck,'Real Exam Mocks','CBT-style timing'],[Search,'Official Vacancies','Direct official links'],[Clock3,'Smart Timer','5 min & 1 min alerts'],[Upload,'Question Upload','TXT, CSV, XLSX, PDF, DOCX, images'],[BarChart3,'Analytics','Candidate + admin insights']].map(([I,x,s])=><div className="feature" key={x}><span className="feature-icon"><I size={18}/></span><b>{x}</b><span>{s}</span></div>)}</section><footer>© 2026 SKTech Exam Portal · Powered by <b>SKTech All Right Reserved</b></footer>{open&&<Login role={role} close={()=>setOpen(false)} login={login}/>}</div>}
+function Landing({role,setRole,open,setOpen,login,theme,setTheme,lang,setLang}){
+  return (
+    <div className="landing">
+      <header className="topbar">
+        <Brand/>
+        <div className="top-actions" style={{display:'flex',alignItems:'center',gap:'10px'}}>
+          <HeaderControls theme={theme} setTheme={setTheme} lang={lang} setLang={setLang}/>
+          {PORTAL_MODE==='admin'?<button className="btn dark" onClick={()=>{setRole('admin');setOpen(true)}}>Admin Login</button>:<button className="btn ghost" onClick={()=>{setRole('student');setOpen(true)}}>Candidate Login</button>}
+        </div>
+      </header>
+      <div style={{maxWidth:'1200px',margin:'0 auto',padding:'16px 20px 0'}}>
+        <ExamCountdownBanner onStartPractice={()=>{setRole('student');setOpen(true)}} lang={lang}/>
+      </div>
+      <main className="hero">
+        <div className="hero-copy">
+          <span className="pill"><Zap size={13}/> SMART EXAM PREPARATION</span>
+          <h1>One portal.<br/><em>Every exam.</em></h1>
+          <p>Subject-wise practice, exam-wise mocks, live exams and personal performance analytics.</p>
+          <div className="hero-buttons">
+            {PORTAL_MODE==='admin'?<button className="btn primary" onClick={()=>{setRole('admin');setOpen(true)}}>Admin Login <ArrowUpRight size={17}/></button>:<><button className="btn primary" onClick={()=>{setRole('student');setOpen(true)}}>Start Preparing <ArrowUpRight size={17}/></button><button className="btn light" onClick={()=>{setRole('student');setOpen(true)}}>Candidate Login</button></>}
+          </div>
+        </div>
+        <div className="hero-card">
+          <div className="hero-card-head"><span>Smart Performance</span><span className="live-dot">● LIVE</span></div>
+          <div className="score">Ready<small>real performance appears after your first attempt</small></div>
+          <div className="ready-list">
+            <div>✓ Live question bank</div>
+            <div>✓ Real score tracking</div>
+            <div>✓ Personalised analytics</div>
+          </div>
+        </div>
+      </main>
+      <section className="feature-grid">
+        {[[BookOpen,'Subject Practice','Easy · Moderate · Hard'],[ClipboardCheck,'Real Exam Mocks','CBT-style timing'],[Search,'Official Vacancies','Direct official links'],[Clock3,'Smart Timer','5 min & 1 min alerts'],[TrendingUp,'Live Performance & Rank Predictor','Track your accuracy, speed, and all-India standing'],[BarChart3,'Analytics','Topic-wise strengths, weaknesses & detailed accuracy insights']].map(([I,x,s])=><div className="feature" key={x}><span className="feature-icon"><I size={18}/></span><b>{x}</b><span>{s}</span></div>)}
+      </section>
+      <footer>© 2026 SKTech Exam Portal · Powered by <b>SKTech All Right Reserved</b></footer>
+      {open&&<Login role={role} close={()=>setOpen(false)} login={login}/>}
+    </div>
+  );
+}
 
 function Login({role,close,login}){
- const [identifier,setIdentifier]=useState(''),[username,setUsername]=useState('Administration User'),[password,setPassword]=useState(''),[otp,setOtp]=useState(''),[sent,setSent]=useState(false),[busy,setBusy]=useState(false),[msg,setMsg]=useState(''),[signup,setSignup]=useState(false);
- const configured=!!supabase;
- const ensureProfile=async(ses)=>{if(!ses?.user?.id||!supabase)return;const u=ses.user;await supabase.from('profiles').upsert({id:u.id,email:u.email||null,phone:u.phone||u.user_metadata?.phone||null,full_name:u.user_metadata?.full_name||u.user_metadata?.name||''},{onConflict:'id'});};
- const resendConfirmation=async()=>{if(!supabase||!identifier.includes('@'))return;setBusy(true);const {error}=await supabase.auth.resend({type:'signup',email:identifier.trim(),options:{emailRedirectTo:window.location.origin}});setBusy(false);setMsg(error?error.message:'Confirmation email sent again. Please confirm it, then sign in.');};
- const sendOtp=async()=>{setMsg(''); if(!configured){setMsg('Supabase is not configured.');return} const phone=identifier.replace(/\s/g,''); if(!/^\+?[0-9]{10,13}$/.test(phone)){setMsg('Enter a valid mobile number with country code, e.g. +9198XXXXXXXX.');return}setBusy(true);const {error}=await supabase.auth.signInWithOtp({phone});setBusy(false);if(error)setMsg(error.message);else{setSent(true);setMsg('OTP sent. Check your SMS.');}};
- const verifyOtp=async()=>{setBusy(true);const {data,error}=await supabase.auth.verifyOtp({phone:identifier.replace(/\s/g,''),token:otp,type:'sms'});setBusy(false);if(error)setMsg(error.message);else {await ensureProfile(data.session);login(data.session,'student');}};
- const passwordLogin=async()=>{setMsg('');if(!configured){setMsg('Supabase is not configured.');return}if(!identifier||!password){setMsg('Enter email/mobile and password.');return}setBusy(true);let result;if(identifier.includes('@')) result=await supabase.auth.signInWithPassword({email:identifier.trim(),password});else result=await supabase.auth.signInWithPassword({phone:identifier.replace(/\s/g,''),password});setBusy(false);if(result.error){ logEvent('error',result.error.message,{source:'auth',data:{action:'password_login'}}); if(!identifier.includes('@') && /unsupported|not enabled|phone/i.test(result.error.message||'')){setMsg('Mobile + password login needs phone authentication to be enabled. You can login now with your Email + Password.');} else {setMsg(result.error.message);} } else {await ensureProfile(result.data.session);login(result.data.session,'student');}};
- const google=async()=>{if(!configured){setMsg('Google login needs Supabase configuration and Google provider setup.');return}setBusy(true);const {error}=await supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo:window.location.origin}});setBusy(false);if(error)setMsg(error.message)};
- const admin=async()=>{setMsg('');if(!configured){setMsg('Admin login is locked until Supabase is configured.');return}if(username.trim().toLowerCase()!=='administration user'){setMsg('Username must be Administration User.');return}if(!ADMIN_AUTH_EMAIL){setMsg('Admin backend account is not configured. Add VITE_ADMIN_AUTH_EMAIL in Vercel.');return}if(!password){setMsg('Enter your admin password.');return}setBusy(true);const {data,error}=await supabase.auth.signInWithPassword({email:ADMIN_AUTH_EMAIL,password});setBusy(false);if(error)setMsg(error.message);else login(data.session,'admin');};
- if(role==='student'&&signup)return <SignUp close={close} back={()=>setSignup(false)} />;
- return <div className="modal-bg"><div className="modal"><button className="close" onClick={close}><X/></button><Brand/><span className="pill modal-pill">{role==='admin'?'ADMIN CONSOLE':'CANDIDATE PORTAL'}</span><h2>{role==='admin'?'Secure Admin Login':'Welcome back'}</h2><p className="muted">{role==='admin'?'Sign in to the administration console.':'Login with Email + Password, Mobile + Password (when phone auth is enabled), OTP or Google.'}</p>{role==='student'?<><label><Mail size={14}/> Email or Mobile Number</label><input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="Email or +91 XXXXX XXXXX" autoComplete="username"/><label><Lock size={14}/> Password</label><input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Your password" autoComplete="current-password"/><button className="btn dark full" disabled={busy} onClick={passwordLogin}>{busy?'Signing in...':'Sign in with Email/Mobile + Password'}</button><div className="or"><span>OR OTP</span></div><button className="btn primary full" disabled={busy} onClick={sendOtp}>{busy?'Sending...':sent?'Resend OTP':'Get OTP on Mobile'}</button>{sent&&<><label>OTP</label><input value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,'').slice(0,6))} placeholder="6 digit OTP" maxLength={6}/><button className="btn dark full" disabled={busy||otp.length!==6} onClick={verifyOtp}>{busy?'Verifying...':'Verify OTP'}</button></>}<div className="or"><span>OR</span></div><button className="btn google full" disabled={busy} onClick={google}>Continue with Google</button><button className="btn light full" onClick={()=>setSignup(true)}>Create New Candidate Account</button></>:<><label><UserCircle size={14}/> Admin Username</label><input value={username} onChange={e=>setUsername(e.target.value)} placeholder="Administration User" autoComplete="username"/><label><Lock size={14}/> Password</label><input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Admin password" autoComplete="current-password"/><button className="btn dark full" disabled={busy} onClick={admin}>{busy?'Signing in...':'Sign in to Admin Console'}</button></>} {msg&&<div className="error-badge">{msg}</div>}{role==='student'&&/confirm|not confirmed/i.test(msg)&&identifier.includes('@')&&<button className="btn light full" onClick={resendConfirmation}>Resend confirmation email</button>}</div></div>
+  const [identifier,setIdentifier]=useState('');
+  const [username,setUsername]=useState('Administration User');
+  const [password,setPassword]=useState('');
+  const [showPassword,setShowPassword]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [msg,setMsg]=useState('');
+  const [signup,setSignup]=useState(false);
+  const configured=!!supabase;
+
+  const ensureProfile=async(ses)=>{
+    if(!ses?.user?.id||!supabase)return;
+    const u=ses.user;
+    await supabase.from('profiles').upsert({
+      id:u.id,
+      email:u.email||null,
+      phone:u.phone||u.user_metadata?.phone||null,
+      full_name:u.user_metadata?.full_name||u.user_metadata?.name||''
+    },{onConflict:'id'});
+  };
+
+  const resendConfirmation=async()=>{
+    if(!supabase||!identifier.includes('@'))return;
+    setBusy(true);
+    const {error}=await supabase.auth.resend({
+      type:'signup',
+      email:identifier.trim(),
+      options:{emailRedirectTo:window.location.origin}
+    });
+    setBusy(false);
+    setMsg(error?error.message:'Confirmation email sent again. Please confirm it, then sign in.');
+  };
+
+  const passwordLogin=async()=>{
+    setMsg('');
+    if(!configured){setMsg('Supabase is not configured.');return;}
+    const trimmedId=identifier.trim();
+    if(!trimmedId){
+      setMsg('Email ID or Mobile Number is strictly mandatory.');
+      return;
+    }
+    if(!password){
+      setMsg('Password is strictly mandatory.');
+      return;
+    }
+    setBusy(true);
+    let result;
+    if(trimmedId.includes('@')){
+      result=await supabase.auth.signInWithPassword({email:trimmedId,password});
+    }else{
+      result=await supabase.auth.signInWithPassword({phone:trimmedId.replace(/\s/g,''),password});
+    }
+    setBusy(false);
+    if(result.error){
+      logEvent('error',result.error.message,{source:'auth',data:{action:'password_login'}});
+      if(!trimmedId.includes('@') && /unsupported|not enabled|phone/i.test(result.error.message||'')){
+        setMsg('Mobile + password login needs phone authentication to be enabled. You can login now with your Email + Password.');
+      } else {
+        setMsg(result.error.message);
+      }
+    } else {
+      await ensureProfile(result.data.session);
+      login(result.data.session,'student');
+    }
+  };
+
+  const admin=async()=>{
+    setMsg('');
+    if(!configured){setMsg('Admin login is locked until Supabase is configured.');return;}
+    if(username.trim().toLowerCase()!=='administration user'){
+      setMsg('Username must be Administration User.');
+      return;
+    }
+    if(!ADMIN_AUTH_EMAIL){
+      setMsg('Admin backend account is not configured. Add VITE_ADMIN_AUTH_EMAIL in Vercel.');
+      return;
+    }
+    if(!password){
+      setMsg('Admin password is strictly mandatory.');
+      return;
+    }
+    setBusy(true);
+    const {data,error}=await supabase.auth.signInWithPassword({email:ADMIN_AUTH_EMAIL,password});
+    setBusy(false);
+    if(error)setMsg(error.message);
+    else login(data.session,'admin');
+  };
+
+  if(role==='student'&&signup) return <SignUp close={close} back={()=>setSignup(false)} />;
+
+  return (
+    <div className="modal-bg">
+      <div className="modal auth-modal">
+        <button className="close" onClick={close} aria-label="Close dialog"><X size={18}/></button>
+        <div className="auth-header">
+          <Brand/>
+          <span className="pill modal-pill">{role==='admin'?'ADMIN CONSOLE':'CANDIDATE PORTAL'}</span>
+          <h2>{role==='admin'?'Admin Sign In':'Candidate Sign In'}</h2>
+          <p className="muted">
+            {role==='admin'
+              ? 'Authorized administration credentials required to access system management.'
+              : 'Sign in with your registered Email ID or Mobile Number to access tests and analysis.'}
+          </p>
+        </div>
+
+        {role==='student'?(
+          <form onSubmit={e=>{e.preventDefault();passwordLogin();}} noValidate>
+            <div className="auth-field">
+              <label className="auth-label" htmlFor="candidate-identifier">
+                <span><Mail size={14}/> Registered Email / Phone</span>
+                <span className="required-star">* Mandatory</span>
+              </label>
+              <div className="auth-input-box">
+                <span className="input-icon"><Mail size={15}/></span>
+                <input
+                  id="candidate-identifier"
+                  value={identifier}
+                  onChange={e=>setIdentifier(e.target.value)}
+                  placeholder="e.g. name@example.com or +91 98XXXXXXXX"
+                  autoComplete="username"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="auth-field">
+              <label className="auth-label" htmlFor="candidate-password">
+                <span><Lock size={14}/> Password</span>
+                <span className="required-star">* Mandatory</span>
+              </label>
+              <div className="auth-input-box">
+                <span className="input-icon"><Lock size={15}/></span>
+                <input
+                  id="candidate-password"
+                  type={showPassword ? 'text' : 'password'}
+                  className="has-toggle"
+                  value={password}
+                  onChange={e=>setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                  required
+                />
+                <button
+                  type="button"
+                  className="auth-pw-toggle"
+                  onClick={()=>setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}
+                </button>
+              </div>
+            </div>
+
+            {msg && <div className="error-badge">{msg}</div>}
+            {/confirm|not confirmed/i.test(msg) && identifier.includes('@') && (
+              <button type="button" className="btn light full" onClick={resendConfirmation}>
+                Resend confirmation email
+              </button>
+            )}
+
+            <button type="submit" className="btn dark full" disabled={busy} style={{marginTop:14}}>
+              {busy ? 'Signing in...' : 'Sign In to Candidate Portal'}
+            </button>
+
+            <div className="auth-divider">
+              <span>New to Examverse?</span>
+            </div>
+
+            <button type="button" className="btn light full" onClick={()=>setSignup(true)}>
+              Create New Candidate Account
+            </button>
+          </form>
+        ):(
+          <form onSubmit={e=>{e.preventDefault();admin();}} noValidate>
+            <div className="auth-field">
+              <label className="auth-label" htmlFor="admin-username">
+                <span><UserCircle size={14}/> Admin Username</span>
+                <span className="required-star">* Mandatory</span>
+              </label>
+              <div className="auth-input-box">
+                <span className="input-icon"><UserCircle size={15}/></span>
+                <input
+                  id="admin-username"
+                  value={username}
+                  onChange={e=>setUsername(e.target.value)}
+                  placeholder="Administration User"
+                  autoComplete="username"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="auth-field">
+              <label className="auth-label" htmlFor="admin-password">
+                <span><KeyRound size={14}/> Admin Password</span>
+                <span className="required-star">* Mandatory</span>
+              </label>
+              <div className="auth-input-box">
+                <span className="input-icon"><KeyRound size={15}/></span>
+                <input
+                  id="admin-password"
+                  type={showPassword ? 'text' : 'password'}
+                  className="has-toggle"
+                  value={password}
+                  onChange={e=>setPassword(e.target.value)}
+                  placeholder="Enter admin password"
+                  autoComplete="current-password"
+                  required
+                />
+                <button
+                  type="button"
+                  className="auth-pw-toggle"
+                  onClick={()=>setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}
+                </button>
+              </div>
+            </div>
+
+            {msg && <div className="error-badge">{msg}</div>}
+
+            <button type="submit" className="btn dark full" disabled={busy} style={{marginTop:16}}>
+              {busy ? 'Authenticating...' : 'Sign In to Admin Console'}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
 }
 function SignUp({close,back}){
- const [form,setForm]=useState({name:'',phone:'',email:'',password:'',confirm:'',captcha:'',terms:false});const [busy,setBusy]=useState(false),[msg,setMsg]=useState(''),[done,setDone]=useState(false);const captcha=SIGNUP_CAPTCHA;
- const submit=async()=>{setMsg('');if(!supabase){setMsg('Supabase is not configured.');return}if(!form.name||!form.phone||!form.email||!form.password){setMsg('Please fill Full Name, Mobile, Email and Password.');return}if(!form.terms){setMsg('Please accept the consent / Terms checkbox to continue.');return}if(form.password.length<8){setMsg('Password must be at least 8 characters.');return}if(form.password!==form.confirm){setMsg('Passwords do not match.');return}if(form.captcha.toUpperCase()!==captcha){setMsg('Captcha is incorrect.');return}const phone=form.phone.replace(/\s/g,'');if(!/^\+?[0-9]{10,13}$/.test(phone)){setMsg('Enter mobile with country code, e.g. +9198XXXXXXXX.');return}setBusy(true);
-  const {data,error}=await supabase.auth.signUp({email:form.email.trim(),password:form.password,options:{data:{full_name:form.name.trim(),phone,signup_method:'email_password',consent_at:new Date().toISOString()}}});
-  if(error){setBusy(false);setMsg(error.message);return}
-  if(data.user){const {error:pe}=await supabase.from('profiles').upsert({id:data.user.id,full_name:form.name.trim(),email:form.email.trim(),phone,consent_at:new Date().toISOString(),role:'candidate'},{onConflict:'id'});if(pe){console.warn(pe)}}
-  setBusy(false);setDone(true);setMsg(data.session?'Account created successfully. You can login now.':'Account created. If Supabase email confirmation is enabled, confirm the email once; otherwise you can login directly with Email + Password.');
- };
- if(done)return <div className="modal-bg"><div className="modal"><button className="close" onClick={close}><X/></button><Brand/><span className="pill modal-pill">CANDIDATE REGISTRATION</span><h2>Account Created ✓</h2><p className="muted">{msg}</p><button className="btn dark full" onClick={back}>Go to Login</button></div></div>;
- return <div className="modal-bg"><div className="modal wide-modal"><button className="close" onClick={close}><X/></button><Brand/><span className="pill modal-pill">NEW CANDIDATE</span><h2>Create your account</h2><p className="muted">Email + password is the primary login. OTP and Google remain optional.</p><div className="form-grid"><label>Full Name<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Full name"/></label><label>Mobile Number<input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="+91 XXXXX XXXXX"/></label><label>Email ID<input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="you@example.com"/></label><label>Create Password<input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="Minimum 8 characters"/></label><label>Confirm Password<input type="password" value={form.confirm} onChange={e=>setForm({...form,confirm:e.target.value})} placeholder="Repeat password"/></label><label>Captcha <b className="captcha-box">{captcha}</b><input value={form.captcha} onChange={e=>setForm({...form,captcha:e.target.value})} placeholder="Enter captcha"/></label></div><label className="consent-row"><input type="checkbox" checked={form.terms} onChange={e=>setForm({...form,terms:e.target.checked})}/><span>I voluntarily provide the above information to this portal and agree to its Terms & Conditions and Privacy Policy.</span></label><button className="btn primary full" disabled={busy} onClick={submit}>{busy?'Creating account...':'Sign Up'}</button>{msg&&<div className="error-badge">{msg}</div>}<button className="btn light full" onClick={back}>Already have an account? Login</button></div></div>
+  const [form,setForm]=useState({name:'',phone:'',email:'',password:'',confirm:'',captcha:'',terms:false});
+  const [showPassword,setShowPassword]=useState(false);
+  const [showConfirm,setShowConfirm]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [msg,setMsg]=useState('');
+  const [done,setDone]=useState(false);
+  const captcha=SIGNUP_CAPTCHA;
+
+  const submit=async()=>{
+    setMsg('');
+    if(!supabase){setMsg('Supabase is not configured.');return;}
+    if(!form.name.trim()){
+      setMsg('Full Name is strictly mandatory.');
+      return;
+    }
+    if(!form.phone.trim()){
+      setMsg('Mobile Number is strictly mandatory.');
+      return;
+    }
+    const phone=form.phone.replace(/\s/g,'');
+    if(!/^\+?[0-9]{10,13}$/.test(phone)){
+      setMsg('Please enter a valid 10 to 13 digit mobile number (e.g. +91 98XXXXXXXX).');
+      return;
+    }
+    if(!form.email.trim()){
+      setMsg('Email ID is strictly mandatory.');
+      return;
+    }
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())){
+      setMsg('Please enter a valid email address (e.g. candidate@example.com).');
+      return;
+    }
+    if(!form.password || form.password.length < 8){
+      setMsg('Password is strictly mandatory and must be at least 8 characters.');
+      return;
+    }
+    if(form.password !== form.confirm){
+      setMsg('Passwords do not match. Please re-enter your password.');
+      return;
+    }
+    if(!form.captcha || form.captcha.trim().toUpperCase() !== captcha){
+      setMsg('Security captcha is incorrect. Please enter the characters shown.');
+      return;
+    }
+    if(!form.terms){
+      setMsg('Please agree to the Terms & Conditions and Privacy Policy.');
+      return;
+    }
+
+    setBusy(true);
+    const {data,error}=await supabase.auth.signUp({
+      email:form.email.trim(),
+      password:form.password,
+      options:{
+        data:{
+          full_name:form.name.trim(),
+          phone,
+          signup_method:'email_password',
+          consent_at:new Date().toISOString()
+        }
+      }
+    });
+
+    if(error){
+      setBusy(false);
+      setMsg(error.message);
+      return;
+    }
+
+    if(data.user){
+      const {error:pe}=await supabase.from('profiles').upsert({
+        id:data.user.id,
+        full_name:form.name.trim(),
+        email:form.email.trim(),
+        phone,
+        consent_at:new Date().toISOString(),
+        role:'candidate'
+      },{onConflict:'id'});
+      if(pe) console.warn(pe);
+    }
+
+    setBusy(false);
+    setDone(true);
+    setMsg(data.session
+      ? 'Candidate account created successfully. You can login now.'
+      : 'Account created! If Supabase email confirmation is enabled, please verify your email; otherwise login directly with your Email ID and Password.');
+  };
+
+  if(done) return (
+    <div className="modal-bg">
+      <div className="modal auth-modal">
+        <button className="close" onClick={close} aria-label="Close"><X size={18}/></button>
+        <div className="auth-header">
+          <Brand/>
+          <span className="pill modal-pill">CANDIDATE REGISTRATION</span>
+          <h2>Account Created ✓</h2>
+          <p className="muted">{msg}</p>
+        </div>
+        <button className="btn dark full" onClick={back}>Go to Sign In</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="modal-bg">
+      <div className="modal auth-modal wide-modal">
+        <button className="close" onClick={close} aria-label="Close dialog"><X size={18}/></button>
+        <div className="auth-header">
+          <Brand/>
+          <span className="pill modal-pill">NEW CANDIDATE REGISTRATION</span>
+          <h2>Create Candidate Account</h2>
+          <p className="muted">
+            Email ID and Mobile Number are strictly mandatory for candidate registration and admit card matching.
+          </p>
+        </div>
+
+        <form onSubmit={e=>{e.preventDefault();submit();}} noValidate>
+          <div className="form-grid">
+            <div className="auth-field">
+              <label className="auth-label" htmlFor="reg-name">
+                <span><UserCircle size={14}/> Full Name</span>
+                <span className="required-star">* Mandatory</span>
+              </label>
+              <div className="auth-input-box">
+                <span className="input-icon"><UserCircle size={15}/></span>
+                <input
+                  id="reg-name"
+                  value={form.name}
+                  onChange={e=>setForm({...form,name:e.target.value})}
+                  placeholder="Full legal name"
+                  autoComplete="name"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="auth-field">
+              <label className="auth-label" htmlFor="reg-phone">
+                <span><Smartphone size={14}/> Mobile Number</span>
+                <span className="required-star">* Mandatory</span>
+              </label>
+              <div className="auth-input-box">
+                <span className="input-icon"><Smartphone size={15}/></span>
+                <input
+                  id="reg-phone"
+                  value={form.phone}
+                  onChange={e=>setForm({...form,phone:e.target.value})}
+                  placeholder="+91 98XXXXXXXX"
+                  autoComplete="tel"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="auth-field">
+              <label className="auth-label" htmlFor="reg-email">
+                <span><Mail size={14}/> Email ID</span>
+                <span className="required-star">* Mandatory</span>
+              </label>
+              <div className="auth-input-box">
+                <span className="input-icon"><Mail size={15}/></span>
+                <input
+                  id="reg-email"
+                  type="email"
+                  value={form.email}
+                  onChange={e=>setForm({...form,email:e.target.value})}
+                  placeholder="candidate@example.com"
+                  autoComplete="email"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="auth-field">
+              <label className="auth-label" htmlFor="reg-password">
+                <span><Lock size={14}/> Create Password</span>
+                <span className="required-star">* Mandatory</span>
+              </label>
+              <div className="auth-input-box">
+                <span className="input-icon"><Lock size={15}/></span>
+                <input
+                  id="reg-password"
+                  type={showPassword ? 'text' : 'password'}
+                  className="has-toggle"
+                  value={form.password}
+                  onChange={e=>setForm({...form,password:e.target.value})}
+                  placeholder="Minimum 8 characters"
+                  autoComplete="new-password"
+                  required
+                />
+                <button
+                  type="button"
+                  className="auth-pw-toggle"
+                  onClick={()=>setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}
+                </button>
+              </div>
+            </div>
+
+            <div className="auth-field">
+              <label className="auth-label" htmlFor="reg-confirm">
+                <span><Lock size={14}/> Confirm Password</span>
+                <span className="required-star">* Mandatory</span>
+              </label>
+              <div className="auth-input-box">
+                <span className="input-icon"><Lock size={15}/></span>
+                <input
+                  id="reg-confirm"
+                  type={showConfirm ? 'text' : 'password'}
+                  className="has-toggle"
+                  value={form.confirm}
+                  onChange={e=>setForm({...form,confirm:e.target.value})}
+                  placeholder="Re-enter password"
+                  autoComplete="new-password"
+                  required
+                />
+                <button
+                  type="button"
+                  className="auth-pw-toggle"
+                  onClick={()=>setShowConfirm(!showConfirm)}
+                  aria-label={showConfirm ? 'Hide password' : 'Show password'}
+                  title={showConfirm ? 'Hide password' : 'Show password'}
+                >
+                  {showConfirm ? <EyeOff size={16}/> : <Eye size={16}/>}
+                </button>
+              </div>
+            </div>
+
+            <div className="auth-field">
+              <label className="auth-label" htmlFor="reg-captcha">
+                <span>Security Captcha: <b className="captcha-box">{captcha}</b></span>
+                <span className="required-star">* Mandatory</span>
+              </label>
+              <div className="auth-input-box">
+                <span className="input-icon"><ShieldCheck size={15}/></span>
+                <input
+                  id="reg-captcha"
+                  value={form.captcha}
+                  onChange={e=>setForm({...form,captcha:e.target.value})}
+                  placeholder="Enter captcha text"
+                  required
+                />
+              </div>
+            </div>
+          </div>
+
+          <label className="consent-row" style={{marginTop:12}}>
+            <input
+              type="checkbox"
+              checked={form.terms}
+              onChange={e=>setForm({...form,terms:e.target.checked})}
+              required
+            />
+            <span>
+              I confirm that the details provided are accurate, and I agree to the portal&apos;s Terms &amp; Conditions and Privacy Policy.
+            </span>
+          </label>
+
+          {msg && <div className="error-badge">{msg}</div>}
+
+          <button type="submit" className="btn primary full" disabled={busy} style={{marginTop:14}}>
+            {busy ? 'Creating Candidate Account...' : 'Sign Up as Candidate'}
+          </button>
+
+          <button type="button" className="btn light full" onClick={back} style={{marginTop:10}}>
+            Already have an account? Sign In
+          </button>
+        </form>
+      </div>
+    </div>
+  );
 }
-function Shell({role,page,setPage,logout,selected,setSelected,session}){
+function Shell({role,page,setPage,logout,selected,setSelected,session,theme,setTheme,lang,setLang}){
   const [sidebarOpen,setSidebarOpen]=useState(false);
   const [recoverySession,setRecoverySession]=useState(null);
 
@@ -210,25 +927,25 @@ function Shell({role,page,setPage,logout,selected,setSelected,session}){
   };
 
   const nav=role==='admin'?[
-    ['dashboard','Dashboard',LayoutDashboard],
-    ['automation','Daily 00:00 Pipeline',Zap],
-    ['questions','Questions',BookOpen],
-    ['exams','Exam Management',ClipboardCheck],
-    ['current-affairs','Current Affairs',Bell],
-    ['vacancies','Vacancies',Search],
-    ['candidates','Users & Candidates',Users],
-    ['notifications','Notifications',Bell],
-    ['system-logs','System Logs',Activity],
-    ['profile','My Profile',UserCircle],
-    ['settings','Settings',Settings]
+    ['dashboard',t(lang, 'navDashboard'),LayoutDashboard],
+    ['automation',t(lang, 'navAutomation'),Zap],
+    ['questions',t(lang, 'navQuestions'),BookOpen],
+    ['exams',t(lang, 'navExamsAdmin'),ClipboardCheck],
+    ['current-affairs',t(lang, 'navCurrentAffairs'),Bell],
+    ['vacancies',t(lang, 'navVacancies'),Search],
+    ['candidates',t(lang, 'navCandidates'),Users],
+    ['notifications',t(lang, 'navNotifications'),Bell],
+    ['system-logs',t(lang, 'navSystemLogs'),Activity],
+    ['profile',t(lang, 'navProfile'),UserCircle],
+    ['settings',t(lang, 'navSettings'),Settings]
   ]:[
-    ['dashboard','Dashboard',LayoutDashboard],
-    ['subjects','Subject Practice',BookOpen],
-    ['exams','Mock Tests',ClipboardCheck],
-    ['current-affairs','Current Affairs',Bell],
-    ['vacancies','Vacancies',Search],
-    ['profile','My Profile',UserCircle],
-    ['settings','Settings',Settings]
+    ['dashboard',t(lang, 'navDashboard'),LayoutDashboard],
+    ['subjects',t(lang, 'navSubjects'),BookOpen],
+    ['exams',t(lang, 'navExams'),ClipboardCheck],
+    ['current-affairs',t(lang, 'navCurrentAffairs'),Bell],
+    ['vacancies',t(lang, 'navVacancies'),Search],
+    ['profile',t(lang, 'navProfile'),UserCircle],
+    ['settings',t(lang, 'navSettings'),Settings]
   ];
 
   return (
@@ -255,8 +972,8 @@ function Shell({role,page,setPage,logout,selected,setSelected,session}){
             <X size={20}/>
           </button>
         </div>
-        <div className="role-badge">{role==='admin'?'ADMIN CONSOLE':'CANDIDATE PORTAL'}</div>
-        {nav.map(([id,t,I])=>(
+        <div className="role-badge">{role==='admin'?t(lang, 'adminBadge'):t(lang, 'candidateBadge')}</div>
+        {nav.map(([id,navLabel,I])=>(
           <button
             className={'nav '+(page===id?'active':'')}
             key={id}
@@ -265,7 +982,7 @@ function Shell({role,page,setPage,logout,selected,setSelected,session}){
               setSidebarOpen(false);
             }}
           >
-            <I size={18}/>{t}
+            <I size={18}/>{navLabel}
           </button>
         ))}
         <button
@@ -275,17 +992,18 @@ function Shell({role,page,setPage,logout,selected,setSelected,session}){
             logout();
           }}
         >
-          <LogOut size={18}/>Logout
+          <LogOut size={18}/>{t(lang, 'navLogout')}
         </button>
       </aside>
       <div className="main">
         <header className="dashbar">
           <div className="welcome">
-            <span className="eyebrow">{role==='admin'?'CONTROL CENTER':'CANDIDATE AREA'}</span>
-            <b>{role==='admin'?'Admin Control Center':'Your Preparation Center'} <span className="wave">✦</span></b>
-            <small>{role==='admin'?'Manage users, exams, questions, vacancies and analytics.':'Track your real scores, weak topics and preparation.'}</small>
+            <span className="eyebrow">{role==='admin'?t(lang, 'adminEyebrow'):t(lang, 'candidateEyebrow')}</span>
+            <b>{role==='admin'?t(lang, 'adminTitle'):t(lang, 'candidateTitle')} <span className="wave">✦</span></b>
+            <small>{role==='admin'?t(lang, 'adminSubtitle'):t(lang, 'candidateSubtitle')}</small>
           </div>
           <div className="dashbar-right" style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:10}}>
+            <HeaderControls theme={theme} setTheme={setTheme} lang={lang} setLang={setLang}/>
             <Profile role={role} logout={logout} session={session} setPage={setPage}/>
             <button
               className={'hamb ' + (sidebarOpen ? 'open' : '')}
@@ -303,19 +1021,19 @@ function Shell({role,page,setPage,logout,selected,setSelected,session}){
           </div>
         </header>
         <div className="content">
-          {page==='dashboard'&&<Dashboard role={role} setPage={setPage} setSelected={setSelected} session={session}/>}
+          {page==='dashboard'&&<Dashboard role={role} setPage={setPage} setSelected={setSelected} session={session} lang={lang} setLang={setLang}/>}
           {page==='automation'&&<DailyAutomation supabase={supabase} session={session}/>}
-          {page==='subjects'&&<Subjects setSelected={setSelected}/>}
-          {page==='exams'&&(role==='admin'?<AdminExams session={session}/>:<Exams setSelected={setSelected}/>)}
+          {page==='subjects'&&<Subjects setSelected={setSelected} lang={lang}/>}
+          {page==='exams'&&(role==='admin'?<AdminExams session={session}/>:<Exams setSelected={setSelected} lang={lang}/>)}
           {page==='current-affairs'&&<CurrentAffairs setSelected={setSelected} role={role}/>}
           {page==='vacancies'&&<Vacancies/>}
-          {page==='questions'&&<Questions session={session}/>}
+          {page==='questions'&&(role==='admin'?<Questions session={session} role={role}/>:<CandidateDashboard setPage={setPage} setSelected={setSelected} session={session} lang={lang} setLang={setLang}/>)}
           {page==='candidates'&&<Candidates session={session}/>}
           {page==='profile'&&<ProfilePage session={session} role={role}/>}
           {page==='settings'&&<SettingsPage session={session} role={role} setPage={setPage}/>}
           {page==='notifications'&&<Notifications/>}
           {page==='system-logs'&&<SystemLogs supabase={supabase} session={session}/>}
-          {selected&&<MockModal exam={selected} close={()=>setSelected(null)} session={session} supabase={supabase} Brand={Brand}/>}
+          {selected&&<MockModal exam={selected} close={()=>setSelected(null)} session={session} supabase={supabase} Brand={Brand} initialLang={lang}/>}
           {recoverySession && !selected && (
             <ExamRecoveryModal
               recoverySession={recoverySession}
@@ -323,6 +1041,7 @@ function Shell({role,page,setPage,logout,selected,setSelected,session}){
               onDecline={handleDeclineRecovery}
               supabase={supabase}
               session={session}
+              lang={lang}
             />
           )}
         </div>
@@ -342,10 +1061,10 @@ function useAdminStats(){
  };load(); const timer=setInterval(load,30000); return()=>{live=false;clearInterval(timer)}},[]); return stats;
 }
 function AdminStat({icon:Icon,label,value,note,kind}){return <div className="admin-stat-card"><div className={'admin-stat-icon '+(kind||'')}><Icon size={19}/></div><div className="admin-stat-copy"><span>{label}</span><strong>{typeof value==='number'?value.toLocaleString('en-IN'):value}</strong><small>{note}</small></div></div>}
-function Dashboard({role,setPage,setSelected,session}){
+function Dashboard({role,setPage,setSelected,session,lang='en',setLang}){
  if(role==='admin'){
   const st=useAdminStats();
-  const cards=[['Total Candidates',st.candidates,'Live from Supabase profiles',Users,'blue'],['Total Questions',st.questions,'Published + review bank',BookOpen,'green'],['Total Mock Tests',st.exams,'Published exam records',ClipboardCheck,'purple'],['Total Attempts',st.attempts,'Saved exam attempts',Activity,'orange'],['Active Users',st.active,'Live presence when tracking is enabled',Eye,'pink'],['Page Views',st.pageViews,'Tracked events',TrendingUp,'teal'],['Revenue',st.revenue,'Payment ledger connected',IndianRupee,'violet'],['Ad Revenue',st.adRevenue,'Ad ledger connected',Megaphone,'rose']];
+  const cards=[[t(lang, 'totalCandidates'),st.candidates,'Live from Supabase profiles',Users,'blue'],[t(lang, 'totalQuestions'),st.questions,'Published + review bank',BookOpen,'green'],[t(lang, 'totalMockTests'),st.exams,'Published exam records',ClipboardCheck,'purple'],[t(lang, 'totalAttempts'),st.attempts,'Saved exam attempts',Activity,'orange'],[t(lang, 'activeUsers'),st.active,'Live presence when tracking is enabled',Eye,'pink'],[t(lang, 'pageViews'),st.pageViews,'Tracked events',TrendingUp,'teal'],[t(lang, 'revenue'),st.revenue,'Payment ledger connected',IndianRupee,'violet'],[t(lang, 'adRevenue'),st.adRevenue,'Ad ledger connected',Megaphone,'rose']];
   return <div className="admin-console"><div className="admin-hero"><div><span className="section-kicker">SKTECH EXAM ADMIN CONSOLE</span><h1>Welcome back, Admin! <span>✦</span></h1><p>One control center for questions, exams, candidates, vacancies, current affairs and analytics.</p></div><div className="admin-date"><CalendarDays size={17}/><div><b>Live workspace</b><small>{st.loaded?'Database connected':'Connecting…'}</small></div></div></div><div className="admin-stats-grid">{cards.map(([label,value,note,I,kind])=><AdminStat key={label} icon={I} label={label} value={value} note={note} kind={kind}/>)}</div><div className="admin-main-grid"><div className="panel admin-chart-panel"><div className="panel-head"><div><span className="section-kicker">ENGAGEMENT</span><b>User & Exam Activity</b></div><div className="range-pills"><button className="active">30D</button><button>90D</button><button>1Y</button></div></div><div className="empty-chart"><div className="chart-gridlines"><i/><i/><i/><i/></div><div className="chart-message"><BarChart3 size={28}/><b>Real analytics ready</b><small>Activity will appear here as candidates browse, practice and attempt exams.</small></div><div className="chart-axis"><span>Week 1</span><span>Week 2</span><span>Week 3</span><span>Week 4</span></div></div></div><div className="panel activity-panel"><div className="panel-head"><div><span className="section-kicker">SYSTEM</span><b>System Health</b></div><span className="success-badge"><CheckCircle2 size={13}/> Connected</span></div><div className="health-list"><p><span><Database size={15}/> Supabase Database</span><b>Healthy</b></p><p><span><ShieldCheck size={15}/> Authentication</span><b>Healthy</b></p><p><span><Upload size={15}/> Question Pipeline</span><b>Ready</b></p><p><span><Bell size={15}/> Notifications</span><b>Ready</b></p><p><span><Activity size={15}/> Analytics Events</span><b>{st.pageViews?'Receiving':'Waiting'}</b></p></div></div></div><div className="admin-lower-grid"><div className="panel"><div className="panel-head"><div><span className="section-kicker">CONTENT</span><b>Question Pipeline</b></div><button className="text-btn" onClick={()=>setPage('questions')}>Open Review Queue →</button></div><div className="pipeline"><div><strong>1</strong><span>Import</span><small>TXT / CSV / XLSX / PDF / DOCX / Image</small></div><div><strong>2</strong><span>Auto Filter</span><small>Format, duplicate, answer & mapping checks</small></div><div><strong>3</strong><span>Approve</span><small>Clean questions publish automatically; exceptions go to review</small></div><div><strong>4</strong><span>Candidate</span><small>Published questions become available in CBT</small></div></div></div><div className="panel"><div className="panel-head"><div><span className="section-kicker">QUICK ACTIONS</span><b>Admin Workspace</b></div></div><div className="admin-actions"><button onClick={()=>setPage('questions')}><Upload/><span><b>Import Questions</b><small>Upload & auto filter</small></span><ArrowUpRight size={15}/></button><button onClick={()=>setPage('exams')}><PlusCircle/><span><b>Create Exam</b><small>Pattern & schedule</small></span><ArrowUpRight size={15}/></button><button onClick={()=>setPage('vacancies')}><Search/><span><b>Manage Vacancies</b><small>Official sources</small></span><ArrowUpRight size={15}/></button><button onClick={()=>setPage('notifications')}><Bell/><span><b>Candidate Alerts</b><small>Send & schedule</small></span><ArrowUpRight size={15}/></button></div></div></div>
 <div className="panel" style={{ marginTop: '20px' }}>
   <div className="panel-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -389,9 +1108,9 @@ function Dashboard({role,setPage,setSelected,session}){
 </div>
 </div>;
  }
- return <CandidateDashboard setPage={setPage} setSelected={setSelected} session={session}/>;
+ return <CandidateDashboard setPage={setPage} setSelected={setSelected} session={session} lang={lang} setLang={setLang}/>;
 }
-function CandidateDashboard({setPage,setSelected,session}){
+function CandidateDashboard({setPage,setSelected,session,lang='en',setLang}){
  const [attempts,setAttempts]=useState([]);
  const [loading,setLoading]=useState(true);
  const [activeSession,setActiveSession]=useState(null);
@@ -439,6 +1158,15 @@ function CandidateDashboard({setPage,setSelected,session}){
  },[session?.user?.id]);
  const last=attempts[0];
  const avg=attempts.length?Math.round(attempts.reduce((a,x)=>a+Number(x.score||0),0)/attempts.length*100)/100:0;
+
+ const switchLang = (newLang) => {
+   if (typeof setLang === 'function') {
+     setLang(newLang);
+     try {
+       localStorage.setItem('sktech_lang', newLang);
+     } catch (_) {}
+   }
+ };
  return <>
    {activeSession && (
      <div style={{
@@ -459,10 +1187,10 @@ function CandidateDashboard({setPage,setSelected,session}){
          <span style={{ fontSize: '24px' }}>⏳</span>
          <div>
            <strong style={{ display: 'block', fontSize: '15px', color: '#92400e', fontWeight: 600 }}>
-             Interrupted Exam Available: {activeSession.exam?.title || activeSession.exam?.name}
+             {t(lang, 'interruptedExamBanner')}: {activeSession.exam?.title || activeSession.exam?.name}
            </strong>
            <span style={{ fontSize: '13px', color: '#b45309' }}>
-             Time remaining: {String(Math.floor((activeSession.time_remaining || 0)/60)).padStart(2,'0')}:{String((activeSession.time_remaining || 0)%60).padStart(2,'0')} • {Object.keys(activeSession.answers || {}).length} of {activeSession.questions?.length || 0} answered
+             {t(lang, 'timeRemaining')}: {String(Math.floor((activeSession.time_remaining || 0)/60)).padStart(2,'0')}:{String((activeSession.time_remaining || 0)%60).padStart(2,'0')} • {t(lang, 'answeredCount', { answered: Object.keys(activeSession.answers || {}).length, total: activeSession.questions?.length || 0 })}
            </span>
          </div>
        </div>
@@ -471,28 +1199,171 @@ function CandidateDashboard({setPage,setSelected,session}){
          onClick={()=>setSelected({ ...activeSession.exam, _recoveryState: activeSession })}
          style={{ padding: '8px 16px', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
        >
-         <Zap size={14}/> Resume Test
+         <Zap size={14}/> {t(lang, 'resumeTest')}
        </button>
      </div>
    )}
-   <Title t="Your Smart Dashboard" s="Your scores, attempts and weak areas are calculated from your real exam history." action={<button className="btn primary" onClick={()=>setPage('subjects')}><Zap size={16}/> Start Practice</button>}/><div className="stats">{[['Overall Score',last?String(last.score):'—',last?'Latest verified attempt':'No verified attempt yet',Target],['Tests Completed',attempts.length,attempts.length?'Saved attempts':'Start your first mock',ClipboardCheck],['Average Score',attempts.length?String(avg):'—',attempts.length?'Across recent attempts':'Build your baseline',TrendingUp],['Needs Practice',last?String(last.wrong_count||0):'—',last?'Wrong answers in latest test':'Analytics after attempts',Target]].map(([a,b,c,I])=><div className="stat" key={a}><div className="stat-icon"><I size={18}/></div><small>{a}</small><strong>{b}</strong><span>{c}</span></div>)}</div><div className="student-grid"><div className="panel"><div className="panel-head"><div><span className="section-kicker">PERFORMANCE</span><b>Latest Attempt</b></div><span className="success-badge">{loading?'Loading…':last?'Verified':'No attempt'}</span></div>{last?<div className="attempt-summary"><div><strong>{last.score}</strong><small>score</small></div><div><strong>{last.correct_count}</strong><small>correct</small></div><div><strong>{last.wrong_count}</strong><small>wrong</small></div><div><strong>{last.skipped_count}</strong><small>skipped</small></div></div>:<div className="focus-body"><div className="focus-copy"><span className="mini-tag">FIRST ACTION</span><h2>Build your baseline</h2><p>Take a real mock using published questions. Your score and attempt will be saved automatically.</p><button className="btn dark" onClick={()=>setPage('exams')}>Take a Mock <ArrowUpRight size={16}/></button></div></div>}</div><div className="panel streak"><span className="section-kicker">YOUR PREPARATION</span><strong>📊 {attempts.length} saved attempt{attempts.length===1?'':'s'}</strong><p>Use Subject Practice to target weak topics and review explanations after attempts.</p><button className="btn light" onClick={()=>setPage('subjects')}>Practice Subjects</button></div></div><div className="panel ca-highlight"><div><span className="section-kicker">CURRENT AFFAIRS</span><h2>📰 Daily Current Affairs</h2><p>Official-source updates, daily questions and weekly/monthly mocks.</p></div><button className="btn dark" onClick={()=>setPage('current-affairs')}>Open Current Affairs <ArrowUpRight size={15}/></button></div>
+   <ExamCountdownBanner onStartPractice={()=>setSelected({name:'MPESB Sub Engineer',cat:'MPESB',tag:'TRENDING',q:100,time:'120 min'})} setPage={setPage} lang={lang}/>
+   <Title
+     t={t(lang, 'dashboardHeading')}
+     s={t(lang, 'dashboardSubheading')}
+     action={
+       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+         <div
+           className="dashboard-lang-selector"
+           role="group"
+           aria-label="Dashboard Language Switcher"
+           style={{
+             display: 'inline-flex',
+             alignItems: 'center',
+             gap: '4px',
+             padding: '4px 8px',
+             borderRadius: '8px',
+             background: 'rgba(99, 102, 241, 0.08)',
+             border: '1px solid rgba(99, 102, 241, 0.22)'
+           }}
+           title={lang === 'hi' ? 'भाषा विकल्प: अंग्रेज़ी या हिंदी चुनें' : 'Language option: Select English or Hindi'}
+         >
+           <Globe size={14} style={{ color: '#6366f1' }} />
+           <span style={{ fontSize: '12px', fontWeight: 700, color: '#4f46e5', marginRight: '2px' }}>
+             {t(lang, 'languageOption')}:
+           </span>
+           <button
+             type="button"
+             id="dash-toggle-en"
+             aria-pressed={lang === 'en'}
+             onClick={() => switchLang('en')}
+             onTouchEnd={(e) => { e.preventDefault(); switchLang('en'); }}
+             style={{
+               border: 0,
+               background: lang === 'en' ? '#6366f1' : 'transparent',
+               color: lang === 'en' ? '#ffffff' : '#64748b',
+               fontWeight: lang === 'en' ? 800 : 600,
+               fontSize: '11px',
+               padding: '3px 8px',
+               borderRadius: '5px',
+               cursor: 'pointer',
+               transition: 'all 0.15s ease',
+               boxShadow: lang === 'en' ? '0 1px 3px rgba(99,102,241,0.3)' : 'none'
+             }}
+           >
+             English
+           </button>
+           <button
+             type="button"
+             id="dash-toggle-hi"
+             aria-pressed={lang === 'hi'}
+             onClick={() => switchLang('hi')}
+             onTouchEnd={(e) => { e.preventDefault(); switchLang('hi'); }}
+             style={{
+               border: 0,
+               background: lang === 'hi' ? '#6366f1' : 'transparent',
+               color: lang === 'hi' ? '#ffffff' : '#64748b',
+               fontWeight: lang === 'hi' ? 800 : 600,
+               fontSize: '11px',
+               padding: '3px 8px',
+               borderRadius: '5px',
+               cursor: 'pointer',
+               transition: 'all 0.15s ease',
+               boxShadow: lang === 'hi' ? '0 1px 3px rgba(99,102,241,0.3)' : 'none'
+             }}
+           >
+             हिंदी
+           </button>
+         </div>
+         <button className="btn primary" onClick={()=>setPage('subjects')}>
+           <Zap size={16}/> {t(lang, 'startPractice')}
+         </button>
+       </div>
+     }
+   />
+   <div className="panel rank-predictor-showcase" style={{ marginBottom: '20px', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', color: '#f8fafc', border: '1px solid #334155', borderRadius: '12px', padding: '18px 22px' }}>
+     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+       <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+         <div style={{ width: '46px', height: '46px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#60a5fa' }}>
+           <TrendingUp size={24} />
+         </div>
+         <div>
+           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+             <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', color: '#38bdf8', textTransform: 'uppercase' }}>{t(lang, 'candidateIntelligence')}</span>
+             <span className="live-dot" style={{ fontSize: '11px', color: '#4ade80' }}>● {t(lang, 'livePredictor')}</span>
+           </div>
+           <h3 style={{ margin: '3px 0 3px', fontSize: '18px', fontWeight: 700, color: '#ffffff' }}>{t(lang, 'rankPredictorTitle')}</h3>
+           <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>{t(lang, 'rankPredictorSub')}</p>
+         </div>
+       </div>
+       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+         <div style={{ textAlign: 'right' }}>
+           <span style={{ display: 'block', fontSize: '11px', color: '#94a3b8' }}>{t(lang, 'estimatedRank')}</span>
+           <b style={{ fontSize: '17px', color: '#38bdf8' }}>{attempts.length ? (lang === 'hi' ? `शीर्ष ${Math.max(1, Math.min(35, Math.round(100 - (avg / 25) * 95)))}% रैंक दायरा` : `Top ${Math.max(1, Math.min(35, Math.round(100 - (avg / 25) * 95)))}% Rank Range`) : (lang === 'hi' ? 'शीर्ष 10-15% (लक्ष्य)' : 'Top 10-15% (Target)')}</b>
+         </div>
+         <button className="btn primary" onClick={()=>setPage('exams')} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', padding: '9px 16px' }}>
+           <TrendingUp size={15}/> {t(lang, 'predictMyRank')} <ArrowUpRight size={14}/>
+         </button>
+       </div>
+     </div>
+   </div>
+   <div className="stats">{[
+     [t(lang, 'overallScore'),last?String(last.score):'—',last?t(lang, 'latestVerifiedAttempt'):t(lang, 'noVerifiedAttemptYet'),Target],
+     [t(lang, 'testsCompleted'),attempts.length,attempts.length?t(lang, 'savedAttempts'):t(lang, 'startYourFirstMock'),ClipboardCheck],
+     [t(lang, 'averageScore'),attempts.length?String(avg):'—',attempts.length?t(lang, 'acrossRecentAttempts'):t(lang, 'buildYourBaseline'),TrendingUp],
+     [t(lang, 'needsPractice'),last?String(last.wrong_count||0):'—',last?t(lang, 'wrongAnswersInLatest'):t(lang, 'rankPredictorSub'),Target]
+   ].map(([a,b,c,I])=><div className="stat" key={a}><div className="stat-icon"><I size={18}/></div><small>{a}</small><strong>{b}</strong><span>{c}</span></div>)}</div>
+   <div className="student-grid">
+     <div className="panel">
+       <div className="panel-head">
+         <div>
+           <span className="section-kicker">{t(lang, 'performanceKicker')}</span>
+           <b>{t(lang, 'latestAttempt')}</b>
+         </div>
+         <span className="success-badge">{loading?t(lang, 'loading'):last?t(lang, 'verified'):t(lang, 'noAttempt')}</span>
+       </div>
+       {last?<div className="attempt-summary">
+         <div><strong>{last.score}</strong><small>{t(lang, 'scoreLabel')}</small></div>
+         <div><strong>{last.correct_count}</strong><small>{t(lang, 'correctLabel')}</small></div>
+         <div><strong>{last.wrong_count}</strong><small>{t(lang, 'wrongLabel')}</small></div>
+         <div><strong>{last.skipped_count}</strong><small>{t(lang, 'skippedLabel')}</small></div>
+       </div>:<div className="focus-body">
+         <div className="focus-copy">
+           <span className="mini-tag">{t(lang, 'firstAction')}</span>
+           <h2>{t(lang, 'buildBaselineTitle')}</h2>
+           <p>{t(lang, 'buildBaselineDesc')}</p>
+           <button className="btn dark" onClick={()=>setPage('exams')}>{t(lang, 'takeAMock')} <ArrowUpRight size={16}/></button>
+         </div>
+       </div>}
+     </div>
+     <div className="panel streak">
+       <span className="section-kicker">{t(lang, 'yourPreparation')}</span>
+       <strong>📊 {attempts.length} {t(lang, 'savedAttemptsCount', { count: attempts.length })}</strong>
+       <p>{t(lang, 'practiceSubjectsDesc')}</p>
+       <button className="btn light" onClick={()=>setPage('subjects')}>{t(lang, 'practiceSubjectsBtn')}</button>
+     </div>
+   </div>
+   <div className="panel ca-highlight">
+     <div>
+       <span className="section-kicker">{t(lang, 'navCurrentAffairs')}</span>
+       <h2>📰 {t(lang, 'dailyCurrentAffairsTitle')}</h2>
+       <p>{t(lang, 'dailyCurrentAffairsDesc')}</p>
+     </div>
+     <button className="btn dark" onClick={()=>setPage('current-affairs')}>{t(lang, 'openCurrentAffairs')} <ArrowUpRight size={15}/></button>
+   </div>
 
 <div className="recruitment-showcase">
   <div className="recruitment-showcase-header">
     <div className="recruitment-showcase-title">
       <Megaphone size={22} style={{ color: '#60a5fa' }} />
       <div>
-        <h3>Official Recruitment & Banking Notifications</h3>
-        <p>Direct official board portals, active vacancy notices and application windows</p>
+        <h3>{t(lang, 'officialRecruitmentTitle')}</h3>
+        <p>{t(lang, 'officialRecruitmentSub')}</p>
       </div>
     </div>
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
       <span className="badge-new-notification">
         <span className="pulse-dot" />
-        New Notification Released
+        {t(lang, 'newNotificationReleased')}
       </span>
       <button className="btn light" onClick={()=>setPage('vacancies')} style={{ fontSize: '11px', padding: '6px 12px' }}>
-        View All 7 Boards <ArrowUpRight size={14} />
+        {t(lang, 'viewAllBoards')} <ArrowUpRight size={14} />
       </button>
     </div>
   </div>
@@ -513,10 +1384,10 @@ function CandidateDashboard({setPage,setSelected,session}){
         </div>
         <div className="recruitment-showcase-card-actions">
           <a href={portal.portal_url} target="_blank" rel="noreferrer" className="btn-notice">
-            <FileText size={13} /> Official Portal
+            <FileText size={13} /> {t(lang, 'officialPortal')}
           </a>
           <a href={portal.apply_url} target="_blank" rel="noreferrer" className="btn-apply">
-            <ExternalLink size={13} /> Apply Window
+            <ExternalLink size={13} /> {t(lang, 'applyWindow')}
           </a>
         </div>
       </div>
@@ -524,12 +1395,12 @@ function CandidateDashboard({setPage,setSelected,session}){
   </div>
 </div>
 
-<Title t="🔥 Trending Exams" s="Start a real CBT using questions that are approved in the question bank."/><div className="exam-grid">{exams.slice(0,6).map(e=><ExamCard e={e} onClick={()=>setSelected(e)} key={e.name}/>)}</div><Title t="📚 Practice by Subject" s="Mathematics, Reasoning, GK, Current Affairs, Banking, MP and technical subjects."/><div className="subject-grid">{subjects.slice(0,12).map(s=><button className="subject-card" key={s} onClick={()=>setSelected({name:s+' Practice',subject:s,cat:'Subject Test'})}><span className="subject-dot"/><b>{s}</b><span>Easy · Moderate · Hard <ArrowUpRight size={14}/></span></button>)}</div></>;
+<Title t={t(lang, 'trendingExamsTitle')} s={t(lang, 'trendingExamsSub')}/><div className="exam-grid">{exams.slice(0,6).map(e=><ExamCard e={e} onClick={()=>setSelected(e)} key={e.name} lang={lang}/>)}</div><Title t={t(lang, 'practiceBySubjectTitle')} s={t(lang, 'practiceBySubjectSub')}/><div className="subject-grid">{subjects.slice(0,12).map(s=><button className="subject-card" key={s} onClick={()=>setSelected({name:s+' Practice',subject:s,cat:'Subject Test'})}><span className="subject-dot"/><b>{s}</b><span>{t(lang, 'difficultyLevels')} <ArrowUpRight size={14}/></span></button>)}</div></>;
 }
 
-function ExamCard({e,onClick}){return <div className="exam-card"><div className="card-top"><span className="tag">{e.tag}</span><span>{e.cat}</span></div><h3>{e.name}</h3><p><FileText size={14}/>{e.q} Questions <Clock3 size={14}/>{e.time}</p><button className="btn dark full" onClick={onClick}>Start Mock <ArrowUpRight size={15}/></button></div>}
-function Subjects({setSelected}){return <><Title t="📚 Subject Practice" s="Select from the full subject library and choose difficulty inside the test."/><div className="subject-grid all">{subjects.map(s=><div className="subject-card big" key={s}><span className="subject-dot"/><b>{s}</b><span>Easy · Moderate · Hard</span><button className="btn dark" onClick={()=>setSelected({name:s+' Practice',subject:s,cat:'Subject Test'})}>Start Practice</button></div>)}</div></>}
-function Exams({setSelected}){const [dbExams,setDbExams]=useState([]);useEffect(()=>{supabase?.from('exams').select('id,title,total_questions,duration_minutes,negative_marking,marks_per_question,randomize_questions,status,subject,exam_type').eq('status','published').order('created_at',{ascending:false}).limit(100).then(({data})=>setDbExams(data||[]))},[]);const list=dbExams;return <><Title t="📝 Mock Tests" s="Live published exams from the admin question bank."/><div className="filter"><input placeholder="Search exam..."/><button className="btn light">All Exams</button><button className="btn light">Trending</button></div><div className="exam-grid">{list.map(e=>{const x=e.id?{...e,name:e.title,q:e.total_questions,time:`${e.duration_minutes} min`,negative:e.negative_marking,marks:e.marks_per_question,cat:'Admin Exam'}:e;return <ExamCard e={x} onClick={()=>setSelected(x)} key={x.id||x.name}/>})}</div></>}
+function ExamCard({e,onClick,lang='en'}){return <div className="exam-card"><div className="card-top"><span className="tag">{e.tag}</span><span>{e.cat}</span></div><h3>{e.name}</h3><p><FileText size={14}/>{e.q} {t(lang, 'questionsLabel')} <Clock3 size={14}/>{e.time}</p><button className="btn dark full" onClick={onClick}>{t(lang, 'startMock')} <ArrowUpRight size={15}/></button></div>}
+function Subjects({setSelected,lang='en'}){return <><Title t={t(lang, 'subjectsTitle')} s={t(lang, 'subjectsSub')}/><div className="subject-grid all">{subjects.map(s=><div className="subject-card big" key={s}><span className="subject-dot"/><b>{s}</b><span>{t(lang, 'easyModHard')}</span><button className="btn dark" onClick={()=>setSelected({name:s+' Practice',subject:s,cat:'Subject Test'})}>{t(lang, 'startPractice')}</button></div>)}</div></>}
+function Exams({setSelected,lang='en'}){const [dbExams,setDbExams]=useState([]);useEffect(()=>{supabase?.from('exams').select('id,title,total_questions,duration_minutes,negative_marking,marks_per_question,randomize_questions,status,subject,exam_type').eq('status','published').order('created_at',{ascending:false}).limit(100).then(({data})=>setDbExams(data||[]))},[]);const list=dbExams;return <><Title t={t(lang, 'mockTestsTitle')} s={t(lang, 'mockTestsSub')}/><div className="filter"><input placeholder={t(lang, 'searchPlaceholder')}/><button className="btn light">{t(lang, 'allExams')}</button><button className="btn light">{t(lang, 'trending')}</button></div><div className="exam-grid">{list.map(e=>{const x=e.id?{...e,name:e.title,q:e.total_questions,time:`${e.duration_minutes} min`,negative:e.negative_marking,marks:e.marks_per_question,cat:'Admin Exam'}:e;return <ExamCard e={x} onClick={()=>setSelected(x)} key={x.id||x.name} lang={lang}/>})}</div></>}
 function Vacancies() {
   const [activeTab, setActiveTab] = useState('all');
   const [search, setSearch] = useState('');
@@ -1404,7 +2275,46 @@ function validateQuestion(r){
   if(isDependentContextMissing(qText)) missing.push('Puzzle premise missing context');
   return [...new Set(missing)];
 }
-function Questions({session}){const inputRef=useRef(null),[file,setFile]=useState(null),[status,setStatus]=useState(''),[rows,setRows]=useState([]),[active,setActive]=useState('pending_review'),[loading,setLoading]=useState(false),[selected,setSelected]=useState([]),[stats,setStats]=useState({pending:0,approved:0,needs:0});
+function Questions({session, role}){const inputRef=useRef(null),[file,setFile]=useState(null),[status,setStatus]=useState(''),[rows,setRows]=useState([]),[active,setActive]=useState('pending_review'),[loading,setLoading]=useState(false),[selected,setSelected]=useState([]),[stats,setStats]=useState({pending:0,approved:0,needs:0});
+  const [isAdminRole, setIsAdminRole] = useState(role === 'admin');
+  const [checkingRole, setCheckingRole] = useState(true);
+
+  useEffect(() => {
+    let activeCall = true;
+    const verifyRole = async () => {
+      if (!session?.user?.id || !supabase) {
+        if (activeCall) {
+          setIsAdminRole(role === 'admin');
+          setCheckingRole(false);
+        }
+        return;
+      }
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', session.user.id)
+          .maybeSingle();
+        if (activeCall) {
+          if (!error && data && ['admin', 'super_admin', 'question_manager'].includes(data.role)) {
+            setIsAdminRole(true);
+          } else if (role === 'admin' && (!data || !data.role)) {
+            setIsAdminRole(true);
+          } else {
+            setIsAdminRole(false);
+          }
+          setCheckingRole(false);
+        }
+      } catch (_) {
+        if (activeCall) {
+          setIsAdminRole(role === 'admin');
+          setCheckingRole(false);
+        }
+      }
+    };
+    verifyRole();
+    return () => { activeCall = false; };
+  }, [session?.user?.id, role]);
   const choose=e=>{const f=e.target.files?.[0];if(!f)return;setFile(f);setStatus(`Selected ${f.name} — ready to process`)};
   const refreshCounts=async()=>{if(!supabase)return;const q=async(st)=>{const {count}=await supabase.from('questions').select('*',{count:'exact',head:true}).eq('status',st);return count||0};const [pending,approved,needs]=await Promise.all([q('pending_review'),q('approved'),q('needs_correction')]);setStats({pending,approved,needs})};
   const process=async()=>{if(!file||!supabase)return;setLoading(true);setStatus('Parsing and validating…');try{const ext=file.name.split('.').pop().toLowerCase();let parsed=[];if(ext==='txt')parsed=parseTxtQuestions(await file.text(),file.name);else if(ext==='csv')parsed=parseCsvRows(await file.text(),file.name);else if(['xlsx','xls'].includes(ext)){const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});if(!wb.SheetNames||!wb.SheetNames.length)throw new Error('Excel workbook has no sheets.');const ws=wb.Sheets[wb.SheetNames[0]];parsed=parseCsvRows(XLSX.utils.sheet_to_csv(ws),file.name)}else throw new Error('Use TXT, CSV or XLSX. TXT is the recommended format.');if(!parsed.length)throw new Error('No questions detected.');const seen=new Set();let duplicateInFile=0;const batchId=`${file.name}-${Date.now()}`;const payload=parsed.map(r=>{let qEn=r.question||'';let qHi=r.question_hi||'';if(!qHi&&/[\u0900-\u097F]/.test(qEn)&&!/[a-zA-Z]/.test(qEn)){qHi=qEn;}const optA_hi=r.option_a_hi||(!/[a-zA-Z]/.test(r.option_a)&&/[\u0900-\u097F]/.test(r.option_a)?r.option_a:null);const optB_hi=r.option_b_hi||(!/[a-zA-Z]/.test(r.option_b)&&/[\u0900-\u097F]/.test(r.option_b)?r.option_b:null);const optC_hi=r.option_c_hi||(!/[a-zA-Z]/.test(r.option_c)&&/[\u0900-\u097F]/.test(r.option_c)?r.option_c:null);const optD_hi=r.option_d_hi||(!/[a-zA-Z]/.test(r.option_d)&&/[\u0900-\u097F]/.test(r.option_d)?r.option_d:null);const hasEn=Boolean((qEn&&/[a-zA-Z]/.test(qEn))||(r.option_a&&/[a-zA-Z]/.test(r.option_a)));const hasHi=Boolean(qHi||optA_hi||/[\u0900-\u097F]/.test(qEn));const lang=r.language||(hasEn&&hasHi?'English + Hindi':hasHi?'Hindi':'English');return{...r,question:qEn,question_hi:qHi||null,option_a_hi:optA_hi,option_b_hi:optB_hi,option_c_hi:optC_hi,option_d_hi:optD_hi,language:lang,import_batch:batchId,status:validateQuestion(r).length?'needs_correction':'approved'}}).filter(r=>{const key=normalizeText(r.question||r.question_hi);if(!key||seen.has(key)){duplicateInFile++;return false}seen.add(key);return true});let total=0,needs=0,approved=0,dupes=duplicateInFile;for(let i=0;i<payload.length;i+=200){const batch=payload.slice(i,i+200);let rpcDone=false;try{const {data,error}=await supabase.rpc('admin_import_questions',{rows:batch});if(!error){rpcDone=true;total+=Number(data?.inserted||0);needs+=Number(data?.needs_correction||0);approved+=Number(data?.approved||0);dupes+=Number(data?.duplicates||0)}}catch(_){}if(!rpcDone){const {data:insData,error:insErr}=await supabase.from('questions').insert(batch).select();if(insErr)throw insErr;const insApp=(insData||[]).filter(x=>x.status==='approved').length;const insNeeds=(insData||[]).filter(x=>x.status==='needs_correction').length;total+=(insData||[]).length;approved+=insApp;needs+=insNeeds}}setStatus(`${total} imported: ${approved} auto-published · ${needs} needs correction · ${dupes} duplicates skipped.`);await loadPending();await refreshCounts()}catch(e){await logEvent('error',e?.message||e,{source:'question-import',action:'import',data:{file:file?.name||''}});setStatus('Import failed: '+(e?.message||e))}finally{setLoading(false)}};
@@ -1419,8 +2329,19 @@ function Questions({session}){const inputRef=useRef(null),[file,setFile]=useStat
   const runAiReview=async()=>{if(!rows.length)return;setLoading(true);setStatus('Running deterministic + Gemini validation batch...');try{const token=(await supabase?.auth?.getSession())?.data?.session?.access_token||'';const res=await fetch('/api/ai-review',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({questions:rows.slice(0,50),autoApproveClean:true})});const data=await res.json();if(!res.ok)throw new Error(data.error||'Validation failed');setStatus(`Validation completed: ${data.approved_count||0} approved · ${data.rejected_count||0} rejected · ${data.needs_correction_count||0} flagged for review.`);await loadPending();await refreshCounts()}catch(e){setStatus('Validation error: '+e.message)}finally{setLoading(false)}};
   const runBilingualTranslate=async()=>{if(!rows.length)return;setLoading(true);setStatus('Translating missing languages via Gemini AI (Bilingual)...');try{const token=(await supabase?.auth?.getSession())?.data?.session?.access_token||'';const targetIds=selected.length?selected:rows.filter(r=>!r.question_hi||!r.question).slice(0,25).map(r=>r.id);if(!targetIds.length){setStatus('Selected questions already have bilingual (English + Hindi) content!');setLoading(false);return}const res=await fetch('/api/bilingual-translate',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({question_ids:targetIds})});const data=await res.json();if(!res.ok)throw new Error(data.error||'Translation failed');setStatus(`Bilingual translation completed: ${data.translated_count||0} translated to English + Hindi.`);await loadPending();await refreshCounts()}catch(e){setStatus('Translation error: '+e.message)}finally{setLoading(false)}};
   const bulkDelete=async()=>{if(!selected.length)return;if(!window.confirm(`Delete ${selected.length} selected questions permanently?`))return;const {error}=await supabase.from('questions').delete().in('id',selected);if(error){setStatus('Bulk delete error: '+error.message);return}setRows(rs=>rs.filter(r=>!selected.includes(r.id)));setSelected([]);setStatus(`Deleted ${selected.length} questions.`);await refreshCounts()};
+  const purgeInvalidExceptions=async()=>{if(!rows.length)return;setLoading(true);setStatus('Purging invalid and quarantined review questions...');try{const token=(await supabase?.auth?.getSession())?.data?.session?.access_token||'';const res=await fetch('/api/admin-cleanup',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({action:'purge_invalid_exceptions',target:'invalid_review_questions',broken_ids:rows.map(r=>r.id)})});const data=await res.json();if(!res.ok)throw new Error(data.error||'Purge failed');setStatus(`Purged ${data.deleted_count||rows.length} unapproved/invalid questions successfully.`);await loadPending();await refreshCounts()}catch(e){setStatus('Purge error: '+e.message)}finally{setLoading(false)}};
   useEffect(()=>{loadPending();refreshCounts()},[]);
-  return <><Title t="📚 Question Bank" s="Smart import: Read → Map → Validate → Duplicate check → Auto Publish clean questions. Only exceptions reach you." action={<div className="quick-actions"><button className="btn light" disabled={!selected.length} onClick={bulkDelete}><Trash2 size={15}/>Bulk Delete ({selected.length})</button></div>}/><div className="pipeline-stats"><div><b>{stats.pending.toLocaleString('en-IN')}</b><span>Pending Review</span></div><div><b>{stats.approved.toLocaleString('en-IN')}</b><span>Published</span></div><div><b>{stats.needs.toLocaleString('en-IN')}</b><span>Needs Correction</span></div></div><div className="upload-box"><input ref={inputRef} type="file" hidden accept=".txt,.csv,.xlsx,.xls" onChange={choose}/><div className="upload-icon"><Upload size={30}/></div><h2>{file?file.name:'Bulk Question Upload'}</h2><p>{file?'File selected.':'Primary: TXT · Also CSV / XLSX (Bilingual English + Hindi supported)'}</p><div className="quick-actions"><button className="btn primary" type="button" onClick={()=>inputRef.current?.click()}><Upload size={16}/> Choose File</button>{file&&<button className="btn dark" type="button" disabled={loading} onClick={process}><Database size={16}/> {loading?'Processing…':'Process & Auto-Queue'}</button>}</div>{status&&<div className="file-selected"><CheckCircle2 size={16}/> {status}</div>}<small>Clean questions are auto-published. Incomplete, mismatched or duplicate records are blocked and kept out of the candidate mock.</small></div><div className="review-tabs"><button className={'btn '+(active==='pending_review'?'dark':'light')} onClick={()=>{setActive('pending_review');loadPending()}}>Pending Review ({stats.pending})</button><button className={'btn '+(active==='approved'?'dark':'light')} onClick={()=>setActive('approved')}>Published Question Bank ({stats.approved})</button></div><div className="panel review-panel"><div className="panel-head"><div><b>{active==='pending_review'?'Review Exceptions':'Published Questions'}</b>{active==='pending_review'&&rows.length?<small style={{display:'block',marginTop:4}}>{selected.length} selected · showing latest {rows.length} review items</small>:null}</div>{active==='pending_review'&&rows.length?<div className="quick-actions"><button className="btn light" onClick={toggleAll}>{selected.length===rows.length?'Clear Selection':'Select All'}</button><button className="btn light" disabled={loading} onClick={runBilingualTranslate}><Languages size={15}/>Translate to Bilingual</button><button className="btn dark" disabled={loading} onClick={runAiReview}><Sparkles size={15}/>Validate with Gemini</button><button className="btn primary" disabled={loading||!rows.length} onClick={bulkApprove}><CheckCircle2 size={15}/>Approve & Publish All Valid</button></div>:null}</div>{active==='pending_review'?(rows.length?rows.map(r=><div className="review-card" key={r.id}><div className="review-question"><label style={{display:'flex',alignItems:'center',gap:8}}><input type="checkbox" checked={selected.includes(r.id)} onChange={()=>toggleSelected(r.id)}/><b>Q{r.number||''}</b>{r.question_hi&&<span className="lang-tag-hi" style={{fontSize:10}}>🌐 Bilingual</span>}</label><textarea placeholder="Question (English)" value={r.question||''} onChange={e=>updateRow(r.id,'question',e.target.value)}/><textarea style={{marginTop:6}} placeholder="प्रश्न (हिन्दी अनुवाद / Hindi Question)" value={r.question_hi||''} onChange={e=>updateRow(r.id,'question_hi',e.target.value)}/></div><div className="review-meta"><label>Subject<select value={r.subject||''} onChange={e=>updateRow(r.id,'subject',e.target.value)}><option value="">Select</option>{subjects.map(x=><option key={x}>{x}</option>)}</select></label><label>Topic<input value={r.topic||''} onChange={e=>updateRow(r.id,'topic',e.target.value)}/></label><label>Difficulty<select value={r.difficulty||'Moderate'} onChange={e=>updateRow(r.id,'difficulty',e.target.value)}><option>Easy</option><option>Moderate</option><option>Hard</option></select></label><label>Language<select value={r.language||'English + Hindi'} onChange={e=>updateRow(r.id,'language',e.target.value)}><option>English + Hindi</option><option>English</option><option>Hindi</option></select></label><label>Exam<input value={r.exam||''} onChange={e=>updateRow(r.id,'exam',e.target.value)}/></label></div><div className="review-options" style={{gridTemplateColumns:'repeat(2, 1fr)'}}><label>Option A (English)<input placeholder="Option A" value={r.option_a||''} onChange={e=>updateRow(r.id,'option_a',e.target.value)}/></label><label>Option A (हिन्दी)<input placeholder="विकल्प A (हिन्दी)" value={r.option_a_hi||''} onChange={e=>updateRow(r.id,'option_a_hi',e.target.value)}/></label><label>Option B (English)<input placeholder="Option B" value={r.option_b||''} onChange={e=>updateRow(r.id,'option_b',e.target.value)}/></label><label>Option B (हिन्दी)<input placeholder="विकल्प B (हिन्दी)" value={r.option_b_hi||''} onChange={e=>updateRow(r.id,'option_b_hi',e.target.value)}/></label><label>Option C (English)<input placeholder="Option C" value={r.option_c||''} onChange={e=>updateRow(r.id,'option_c',e.target.value)}/></label><label>Option C (हिन्दी)<input placeholder="विकल्प C (हिन्दी)" value={r.option_c_hi||''} onChange={e=>updateRow(r.id,'option_c_hi',e.target.value)}/></label><label>Option D (English)<input placeholder="Option D" value={r.option_d||''} onChange={e=>updateRow(r.id,'option_d',e.target.value)}/></label><label>Option D (हिन्दी)<input placeholder="विकल्प D (हिन्दी)" value={r.option_d_hi||''} onChange={e=>updateRow(r.id,'option_d_hi',e.target.value)}/></label></div><div className="review-answer"><label>Correct Answer<select value={cleanAnswer(r.correct_answer)||''} onChange={e=>updateRow(r.id,'correct_answer',e.target.value)}><option value="">Select answer</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label><label>Explanation (English)<textarea value={r.explanation||''} onChange={e=>updateRow(r.id,'explanation',e.target.value)} /></label><label>Explanation (हिन्दी / Hindi)<textarea placeholder="विस्तृत हिन्दी हल..." value={r.explanation_hi||''} onChange={e=>updateRow(r.id,'explanation_hi',e.target.value)} /></label></div><div className="review-actions"><button className="btn light" onClick={()=>reject(r)}><Trash2 size={14}/> Reject</button><button className="btn primary" onClick={()=>approve(r)}><CheckCircle2 size={14}/> Approve & Publish</button></div></div>):<p className="muted">No exceptions waiting.</p>):<PublishedQuestions/>}</div></>;
+  if (checkingRole) return <div className="loading-screen"><Brand/><p>Verifying admin permissions…</p></div>;
+  if (!isAdminRole) {
+    return (
+      <div className="panel" style={{ textAlign: 'center', padding: '40px 20px', maxWidth: 520, margin: '40px auto' }}>
+        <ShieldCheck size={48} style={{ color: '#ef4444', margin: '0 auto 16px' }} />
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0f172a' }}>Administrative Access Required</h2>
+        <p className="muted" style={{ margin: '8px 0 20px' }}>Question bank import and management is strictly restricted to verified administrators and super admins.</p>
+      </div>
+    );
+  }
+  return <><Title t="📚 Question Bank" s="Smart import: Read → Map → Validate → Duplicate check → Auto Publish clean questions. Only exceptions reach you." action={<div className="quick-actions"><button className="btn light" disabled={!selected.length} onClick={bulkDelete}><Trash2 size={15}/>Bulk Delete ({selected.length})</button></div>}/><div className="pipeline-stats"><div><b>{stats.pending.toLocaleString('en-IN')}</b><span>Pending Review</span></div><div><b>{stats.approved.toLocaleString('en-IN')}</b><span>Published</span></div><div><b>{stats.needs.toLocaleString('en-IN')}</b><span>Needs Correction</span></div></div><div className="upload-box"><input ref={inputRef} type="file" hidden accept=".txt,.csv,.xlsx,.xls" onChange={choose}/><div className="upload-icon"><Upload size={30}/></div><h2>{file?file.name:'Bulk Question Upload'}</h2><p>{file?'File selected.':'Primary: TXT · Also CSV / XLSX (Bilingual English + Hindi supported)'}</p><div className="quick-actions"><button className="btn primary" type="button" onClick={()=>inputRef.current?.click()}><Upload size={16}/> Choose File</button>{file&&<button className="btn dark" type="button" disabled={loading} onClick={process}><Database size={16}/> {loading?'Processing…':'Process & Auto-Queue'}</button>}</div>{status&&<div className="file-selected"><CheckCircle2 size={16}/> {status}</div>}<small>Clean questions are auto-published. Incomplete, mismatched or duplicate records are blocked and kept out of the candidate mock.</small></div><div className="review-tabs"><button className={'btn '+(active==='pending_review'?'dark':'light')} onClick={()=>{setActive('pending_review');loadPending()}}>Pending Review ({stats.pending})</button><button className={'btn '+(active==='approved'?'dark':'light')} onClick={()=>setActive('approved')}>Published Question Bank ({stats.approved})</button></div><div className="panel review-panel"><div className="panel-head"><div><b>{active==='pending_review'?'Review Exceptions':'Published Questions'}</b>{active==='pending_review'&&rows.length?<small style={{display:'block',marginTop:4}}>{selected.length} selected · showing latest {rows.length} review items</small>:null}</div>{active==='pending_review'&&rows.length?<div className="quick-actions"><button className="btn light" onClick={toggleAll}>{selected.length===rows.length?'Clear Selection':'Select All'}</button><button className="btn light" disabled={loading} onClick={runBilingualTranslate}><Languages size={15}/>Translate to Bilingual</button><button className="btn dark" disabled={loading} onClick={runAiReview}><Sparkles size={15}/>Validate with Gemini</button><button className="btn light" style={{color:'#dc2626',borderColor:'#fca5a5'}} disabled={loading||!rows.length} onClick={purgeInvalidExceptions} title="Permanently discard and delete invalid or broken review questions"><Trash2 size={15}/>Purge Exceptions</button><button className="btn primary" disabled={loading||!rows.length} onClick={bulkApprove}><CheckCircle2 size={15}/>Approve & Publish All Valid</button></div>:null}</div>{active==='pending_review'?(rows.length?rows.map(r=><div className="review-card" key={r.id}><div className="review-question"><label style={{display:'flex',alignItems:'center',gap:8}}><input type="checkbox" checked={selected.includes(r.id)} onChange={()=>toggleSelected(r.id)}/><b>Q{r.number||''}</b>{r.question_hi&&<span className="lang-tag-hi" style={{fontSize:10}}>🌐 Bilingual</span>}</label><textarea placeholder="Question (English)" value={r.question||''} onChange={e=>updateRow(r.id,'question',e.target.value)}/><textarea style={{marginTop:6}} placeholder="प्रश्न (हिन्दी अनुवाद / Hindi Question)" value={r.question_hi||''} onChange={e=>updateRow(r.id,'question_hi',e.target.value)}/></div><div className="review-meta"><label>Subject<select value={r.subject||''} onChange={e=>updateRow(r.id,'subject',e.target.value)}><option value="">Select</option>{subjects.map(x=><option key={x}>{x}</option>)}</select></label><label>Topic<input value={r.topic||''} onChange={e=>updateRow(r.id,'topic',e.target.value)}/></label><label>Difficulty<select value={r.difficulty||'Moderate'} onChange={e=>updateRow(r.id,'difficulty',e.target.value)}><option>Easy</option><option>Moderate</option><option>Hard</option></select></label><label>Language<select value={r.language||'English + Hindi'} onChange={e=>updateRow(r.id,'language',e.target.value)}><option>English + Hindi</option><option>English</option><option>Hindi</option></select></label><label>Exam<input value={r.exam||''} onChange={e=>updateRow(r.id,'exam',e.target.value)}/></label></div><div className="review-options" style={{gridTemplateColumns:'repeat(2, 1fr)'}}><label>Option A (English)<input placeholder="Option A" value={r.option_a||''} onChange={e=>updateRow(r.id,'option_a',e.target.value)}/></label><label>Option A (हिन्दी)<input placeholder="विकल्प A (हिन्दी)" value={r.option_a_hi||''} onChange={e=>updateRow(r.id,'option_a_hi',e.target.value)}/></label><label>Option B (English)<input placeholder="Option B" value={r.option_b||''} onChange={e=>updateRow(r.id,'option_b',e.target.value)}/></label><label>Option B (हिन्दी)<input placeholder="विकल्प B (हिन्दी)" value={r.option_b_hi||''} onChange={e=>updateRow(r.id,'option_b_hi',e.target.value)}/></label><label>Option C (English)<input placeholder="Option C" value={r.option_c||''} onChange={e=>updateRow(r.id,'option_c',e.target.value)}/></label><label>Option C (हिन्दी)<input placeholder="विकल्प C (हिन्दी)" value={r.option_c_hi||''} onChange={e=>updateRow(r.id,'option_c_hi',e.target.value)}/></label><label>Option D (English)<input placeholder="Option D" value={r.option_d||''} onChange={e=>updateRow(r.id,'option_d',e.target.value)}/></label><label>Option D (हिन्दी)<input placeholder="विकल्प D (हिन्दी)" value={r.option_d_hi||''} onChange={e=>updateRow(r.id,'option_d_hi',e.target.value)}/></label></div><div className="review-answer"><label>Correct Answer<select value={cleanAnswer(r.correct_answer)||''} onChange={e=>updateRow(r.id,'correct_answer',e.target.value)}><option value="">Select answer</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label><label>Explanation (English)<textarea value={r.explanation||''} onChange={e=>updateRow(r.id,'explanation',e.target.value)} /></label><label>Explanation (हिन्दी / Hindi)<textarea placeholder="विस्तृत हिन्दी हल..." value={r.explanation_hi||''} onChange={e=>updateRow(r.id,'explanation_hi',e.target.value)} /></label></div><div className="review-actions"><button className="btn light" onClick={()=>reject(r)}><Trash2 size={14}/> Reject</button><button className="btn primary" onClick={()=>approve(r)}><CheckCircle2 size={14}/> Approve & Publish</button></div></div>):<p className="muted">No exceptions waiting.</p>):<PublishedQuestions/>}</div></>;
 }
 function PublishedQuestions(){const[data,setData]=useState([]);useEffect(()=>{supabase?.from('questions').select('id,question,question_hi,option_a,option_b,option_c,option_d,option_a_hi,option_b_hi,option_c_hi,option_d_hi,correct_answer,subject,topic,difficulty,exam,language').eq('status','approved').order('created_at',{ascending:false}).limit(200).then(({data})=>setData((data||[]).filter(r=>(r.question||r.question_hi)&&(r.option_a||r.option_a_hi)&&(r.option_b||r.option_b_hi)&&(r.option_c||r.option_c_hi)&&(r.option_d||r.option_d_hi)&&/^[ABCD]$/.test(cleanAnswer(r.correct_answer)))))},[]);return data.length?data.map(r=><div className="question-row" key={r.id}><div><b>{r.subject||'Unmapped'}</b>{r.question_hi&&<span className="lang-tag-hi" style={{marginLeft:8}}>🌐 Bilingual</span>}<small>{r.question||r.question_hi}</small>{r.question_hi&&r.question&&<small style={{color:'#64748b'}}>हिन्दी: {r.question_hi}</small>}<small>{r.option_a||r.option_a_hi} · {r.option_b||r.option_b_hi} · {r.option_c||r.option_c_hi} · {r.option_d||r.option_d_hi}</small></div><span>Published</span></div>):<p className="muted">No valid published questions yet.</p>}
 

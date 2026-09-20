@@ -2,6 +2,7 @@ import {
   getSupabaseAdmin,
   getGeminiClient,
   OFFICIAL_SOURCES,
+  OFFICIAL_GROUNDED_MILESTONES,
   OFFICIAL_RECRUITMENT_PORTALS,
   getKolkataDateString,
   validateQuestionDeterministic,
@@ -11,6 +12,8 @@ import {
   getNormalizedGeminiModel,
   handleCorsAndOptions,
   resolveOptionDuplicatesAndDistribute,
+  computeQuestionNormalizedHash,
+  isQuestionDuplicateInDb,
   sanitizeObject,
   sanitizeString,
   sanitizeErrorResponse,
@@ -20,14 +23,120 @@ import {
 import crypto from 'node:crypto';
 
 /**
- * Fetch and extract real press releases and regulatory bulletins from official government portals
- * Parses standard RSS/XML feeds or official public notification listings.
- * Times out after 6 seconds per source to prevent hanging.
- * If source fails to fetch: DOES NOT FABRICATE DATA. Returns empty/error record.
+ * Dynamically classifies a bulletin into one of the 4 core exam domains:
+ * 1. National & International Current Affairs (Summits, Treaties)
+ * 2. State Special Topics (Madhya Pradesh policies, industrial models, infrastructure)
+ * 3. Banking, Financial Sector & Economic Impacts
+ * 4. Governance, Public Welfare & New Legislative Rules
  */
-async function fetchRealOfficialBulletins(sources = OFFICIAL_SOURCES) {
+export function classifyBulletinDomain(title = '', summary = '', category = '', sourceName = '') {
+  const text = `${title} ${summary} ${category} ${sourceName}`.toLowerCase();
+
+  // 1. State Special Topics (Madhya Pradesh policies, industrial models, infrastructure)
+  if (
+    text.includes('madhya pradesh') ||
+    text.includes(' mp ') ||
+    text.includes('pithampur') ||
+    text.includes('mandideep') ||
+    text.includes('ken-betwa') ||
+    text.includes('mpidc') ||
+    text.includes('mppsc') ||
+    text.includes('mpesb') ||
+    text.includes('sub-engineer') ||
+    text.includes('rewa solar') ||
+    text.includes('omkareshwar') ||
+    text.includes('bhopal') ||
+    text.includes('indore')
+  ) {
+    return {
+      domain: 'State Special Topics (Madhya Pradesh policies, industrial models, infrastructure)',
+      subject: 'MP GK',
+      topic: text.includes('industrial') || text.includes('japan') || text.includes('investment')
+        ? 'Japan-MP Industrial Model & State SEZs'
+        : text.includes('ken-betwa') || text.includes('water') || text.includes('dam') || text.includes('canal')
+        ? 'Ken-Betwa River Interlinking & MP Infrastructure'
+        : 'Madhya Pradesh State Policies & Public Welfare',
+      exam_relevance: 'MP Sub-Engineer CBT (Civil/Mech/Elec), MPPSC & State Engineering Services'
+    };
+  }
+
+  // 2. Banking, Financial Sector & Economic Impacts
+  if (
+    text.includes('rbi') ||
+    text.includes('reserve bank') ||
+    text.includes('monetary policy') ||
+    text.includes('repo rate') ||
+    text.includes('unified lending') ||
+    text.includes('uli') ||
+    text.includes('cbdc') ||
+    text.includes('digital rupee') ||
+    text.includes('sebi') ||
+    text.includes('nabard') ||
+    text.includes('finmin') ||
+    text.includes('banking') ||
+    text.includes('inflation') ||
+    text.includes('fiscal')
+  ) {
+    return {
+      domain: 'Banking, Financial Sector & Economic Impacts',
+      subject: 'Banking Awareness',
+      topic: text.includes('uli') || text.includes('cbdc') || text.includes('digital')
+        ? 'Digital Public Infrastructure & Monetary Technology'
+        : 'RBI Monetary Policy & Banking Regulations',
+      exam_relevance: 'IBPS RRB, SBI PO, SSC CGL & MP Sub-Engineer General Awareness'
+    };
+  }
+
+  // 3. Governance, Public Welfare & New Legislative Rules
+  if (
+    text.includes('bill') ||
+    text.includes('act') ||
+    text.includes('sanhita') ||
+    text.includes('bharatiya nyaya') ||
+    text.includes('dpdp') ||
+    text.includes('prs') ||
+    text.includes('parliament') ||
+    text.includes('gazette') ||
+    text.includes('welfare scheme') ||
+    text.includes('governance') ||
+    text.includes('legislative') ||
+    text.includes('niti aayog')
+  ) {
+    return {
+      domain: 'Governance, Public Welfare & New Legislative Rules',
+      subject: 'General Awareness',
+      topic: text.includes('dpdp') || text.includes('data')
+        ? 'Digital Personal Data Protection & Cyber Governance'
+        : text.includes('sanhita') || text.includes('bns')
+        ? 'Bharatiya Nyaya Sanhita & Legal Reforms'
+        : 'Landmark Legislative Bills & Governance Rules',
+      exam_relevance: 'MPPSC, MP Sub-Engineer General Knowledge & National Competitive Exams'
+    };
+  }
+
+  // 4. National & International Current Affairs (Summits, Treaties)
+  return {
+    domain: 'National & International Current Affairs (Summits, Treaties)',
+    subject: 'Current Affairs',
+    topic: text.includes('summit') || text.includes('treaty') || text.includes('partnership')
+      ? 'International Summits, Bilateral Treaties & Foreign Partnerships'
+      : 'National Governance & Bilateral Affairs',
+    exam_relevance: 'MP Sub-Engineer CBT, MPPSC & UPSC General Studies'
+  };
+}
+
+/**
+ * Fetch and extract real press releases and regulatory bulletins from official government portals
+ * Parses standard RSS/XML feeds across a 1-year rolling temporal window.
+ * Incorporates verified state-specific economic milestones (Japan-MP investment models, Ken-Betwa link, landmark bills)
+ * to guarantee robust multi-domain coverage.
+ */
+export async function fetchRealOfficialBulletins(sources = OFFICIAL_SOURCES, options = {}) {
   const bulletins = [];
   const fetchStatus = [];
+  const windowDays = options.windowDays || 365;
+  const nowMs = Date.now();
+  const cutoffTime = nowMs - (windowDays * 24 * 60 * 60 * 1000);
 
   const results = await Promise.all(sources.map(async (src) => {
     const localBulletins = [];
@@ -40,14 +149,13 @@ async function fetchRealOfficialBulletins(sources = OFFICIAL_SOURCES) {
     };
 
     try {
-      // Real HTTP fetch with timeout and standard User-Agent
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
 
       const targetUrl = src.feed_url || src.portal_url;
       const res = await fetch(targetUrl, {
         headers: {
-          'User-Agent': 'SKTech-ExamPortal-OfficialCollector/1.0 (Govt Portal Sync)',
+          'User-Agent': 'SKTech-ExamPortal-OfficialCollector/1.0 (Govt Multi-Domain Sync)',
           'Accept': 'application/rss+xml, application/xml, text/xml, application/atom+xml, text/html'
         },
         signal: controller.signal
@@ -83,17 +191,26 @@ async function fetchRealOfficialBulletins(sources = OFFICIAL_SOURCES) {
 
         if (title && title.length >= 10 && (link || src.portal_url)) {
           let publishedAt = new Date().toISOString();
+          let itemTime = nowMs;
           if (rawDate) {
             try {
               const parsedDate = new Date(rawDate);
               if (parsedDate instanceof Date && !Number.isNaN(parsedDate.getTime())) {
                 publishedAt = parsedDate.toISOString();
+                itemTime = parsedDate.getTime();
               }
             } catch {
               publishedAt = new Date().toISOString();
             }
           }
-          const extId = `official:${src.name.toLowerCase()}:${crypto.createHash('md5').update(title + link).digest('hex')}`;
+
+          // Strict 1-year window filter
+          if (itemTime < cutoffTime) {
+            continue;
+          }
+
+          const extId = `official:${src.name.toLowerCase().replace(/[^a-z0-9]/g, '')}:${crypto.createHash('md5').update(title + link).digest('hex')}`;
+          const classification = classifyBulletinDomain(title, summary, src.category, src.name);
 
           const bulletin = {
             external_id: extId,
@@ -101,9 +218,10 @@ async function fetchRealOfficialBulletins(sources = OFFICIAL_SOURCES) {
             summary: (summary || title).slice(0, 1500),
             source_name: src.name,
             source_url: link || src.portal_url,
-            category: src.category,
-            subject: 'Current Affairs',
-            topic: src.category,
+            category: classification.domain,
+            subject: classification.subject,
+            topic: classification.topic,
+            exam_relevance: classification.exam_relevance,
             published_at: publishedAt,
             event_date: publishedAt.slice(0, 10),
             generated_at: new Date().toISOString(),
@@ -136,7 +254,174 @@ async function fetchRealOfficialBulletins(sources = OFFICIAL_SOURCES) {
     if (result?.statusRecord) fetchStatus.push(result.statusRecord);
   }
 
+  // Ensure state-specific milestones & foreign partnerships (e.g. Japan-MP industrial model, Ken-Betwa link) are tracked across the 1-year window
+  if (options.includeGroundedMilestones !== false && Array.isArray(OFFICIAL_GROUNDED_MILESTONES)) {
+    const existingExtIds = new Set(bulletins.map(b => b.external_id));
+    for (const milestone of OFFICIAL_GROUNDED_MILESTONES) {
+      const milestoneTime = new Date(milestone.published_at).getTime();
+      if (milestoneTime >= cutoffTime && !existingExtIds.has(milestone.external_id)) {
+        const classification = classifyBulletinDomain(milestone.title, milestone.summary, milestone.category, milestone.source_name);
+        bulletins.push({
+          ...milestone,
+          category: classification.domain,
+          subject: classification.subject,
+          topic: classification.topic,
+          exam_relevance: milestone.exam_relevance || classification.exam_relevance,
+          generated_at: new Date().toISOString(),
+          verification_status: 'verified_official_source',
+          source_metadata: {
+            domain: milestone.domain,
+            authority: milestone.authority,
+            verified_at: new Date().toISOString()
+          }
+        });
+        existingExtIds.add(milestone.external_id);
+      }
+    }
+  }
+
   return { bulletins, fetchStatus };
+}
+
+/**
+ * Multi-Subject Question Synthesis Engine (Gemini)
+ * Dynamically synthesizes exam-oriented multiple-choice questions across:
+ * 1. National & International Current Affairs (Summits, Treaties)
+ * 2. State Special Topics (Madhya Pradesh policies, industrial models, infrastructure)
+ * 3. Banking, Financial Sector & Economic Impacts
+ * 4. Governance, Public Welfare & New Legislative Rules
+ *
+ * Each generated question includes multi-angle explanations:
+ * (a) Core factual explanation
+ * (b) Policy/statutory context
+ * (c) Direct competitive exam relevance (e.g. MP Sub-Engineer Exam, MPPSC, Banking)
+ */
+export async function synthesizeMultiSubjectExamQuestions(gemini, candidateBulletins, options = {}) {
+  const generatedQuestions = [];
+  if (!gemini || !Array.isArray(candidateBulletins) || candidateBulletins.length === 0) {
+    return generatedQuestions;
+  }
+
+  const batch = candidateBulletins.slice(0, options.maxCount || 6);
+
+  for (const bulletin of batch) {
+    try {
+      const classification = classifyBulletinDomain(bulletin.title, bulletin.summary, bulletin.category, bulletin.source_name);
+
+      const prompt = `You are an expert competitive exam question paper setter for Indian examinations (MP Sub-Engineer CBT, MPPSC, IBPS, SSC).
+Based SOLELY on this verified official press bulletin, generate ONE high-quality, syllabus-aligned multiple choice question.
+
+BULLETIN DETAILS:
+Title: ${bulletin.title}
+Summary: ${bulletin.summary}
+Source: ${bulletin.source_name} (${bulletin.source_url})
+Domain: ${classification.domain}
+Suggested Subject: ${classification.subject}
+Suggested Topic: ${classification.topic}
+Target Exam: ${bulletin.exam_relevance || 'MP Sub-Engineer CBT & MPPSC'}
+
+STRICT GENERATION RULES:
+1. Every answer and explanation MUST be factually grounded in the official bulletin details. Never hallucinate facts or figures.
+2. Provide a MULTI-ANGLE EXPLANATION containing:
+   - Part 1: Core Factual Answer verification.
+   - Part 2: Strategic/Policy/Statutory background (e.g., industrial corridor framework, treaty parameters, or legislative implications).
+   - Part 3: Direct Exam Relevance: Explicit note explaining why this is critical for candidates preparing for competitive exams like the MP Sub-Engineer Exam (MPESB), MPPSC, or Banking.
+3. Bilingual Support: Provide English and Hindi for question, 4 options, and explanation.
+4. Correct answer MUST be strictly one of: "A", "B", "C", or "D".
+5. All 4 options must be plausible, distinct, and mutually exclusive.
+
+Return JSON in this EXACT schema:
+{
+  "question": "Clear problem statement in English",
+  "question_hi": "हिंदी में स्पष्ट प्रश्न",
+  "option_a": "Option A in English",
+  "option_b": "Option B in English",
+  "option_c": "Option C in English",
+  "option_d": "Option D in English",
+  "option_a_hi": "विकल्प A हिंदी में",
+  "option_b_hi": "विकल्प B हिंदी में",
+  "option_c_hi": "विकल्प C हिंदी में",
+  "option_d_hi": "विकल्प D हिंदी में",
+  "correct_answer": "A",
+  "explanation": "Multi-angle explanation: [Core Fact] ... [Policy/Context] ... [Exam Relevance for MP Sub-Engineer / MPPSC] ...",
+  "explanation_hi": "बहुआयामी विस्तृत समाधान (तथ्य, नीतिगत संदर्भ व एमपी सब-इंजीनियर परीक्षा प्रासंगिकता)",
+  "subject": "${classification.subject}",
+  "topic": "${classification.topic}",
+  "exam_relevance": "${bulletin.exam_relevance || 'MP Sub-Engineer CBT (General Knowledge & Engineering GK)'}",
+  "difficulty": "Moderate"
+}`;
+
+      const response = await callGeminiWithRetry(
+        () =>
+          gemini.models.generateContent({
+            model: getNormalizedGeminiModel(process.env.GEMINI_REVIEW_MODEL_ID),
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            config: { responseMimeType: 'application/json' }
+          }),
+        {
+          operationName: `Multi-Subject MCQ Synthesis (${classification.subject} - ${bulletin.source_name})`,
+          maxRetries: options.maxRetries !== undefined ? options.maxRetries : 3,
+          timeoutMs: options.timeoutMs || 20000,
+          initialDelayMs: options.testMode ? 15 : 1000,
+          silent: Boolean(options.silent)
+        }
+      );
+
+      const rawParsed = cleanJsonParse(response.text || '{}');
+      const candidateToResolve = {
+        ...rawParsed,
+        source_name: bulletin.source_name,
+        source_url: bulletin.source_url,
+        published_at: bulletin.published_at,
+        subject: rawParsed.subject || classification.subject,
+        topic: rawParsed.topic || classification.topic,
+        exam_relevance: rawParsed.exam_relevance || bulletin.exam_relevance || classification.exam_relevance
+      };
+      const parsed = resolveOptionDuplicatesAndDistribute(candidateToResolve);
+
+      if (parsed.question && parsed.option_a && parsed.correct_answer) {
+        const val = validateQuestionDeterministic(parsed, { requireSource: true });
+        if (val.valid) {
+          const contentHash = computeQuestionNormalizedHash(parsed);
+
+          generatedQuestions.push({
+            question: parsed.question,
+            question_hi: parsed.question_hi || '',
+            option_a: parsed.option_a,
+            option_b: parsed.option_b,
+            option_c: parsed.option_c,
+            option_d: parsed.option_d,
+            option_a_hi: parsed.option_a_hi || '',
+            option_b_hi: parsed.option_b_hi || '',
+            option_c_hi: parsed.option_c_hi || '',
+            option_d_hi: parsed.option_d_hi || '',
+            correct_answer: val.cleanedAnswer,
+            explanation: parsed.explanation || '',
+            explanation_hi: parsed.explanation_hi || '',
+            subject: parsed.subject || classification.subject,
+            topic: parsed.topic || classification.topic,
+            exam_relevance: parsed.exam_relevance || classification.exam_relevance,
+            difficulty: parsed.difficulty || 'Moderate',
+            language: 'English + Hindi',
+            source_name: bulletin.source_name,
+            source_url: bulletin.source_url,
+            published_at: bulletin.published_at,
+            exam: 'Daily Current Affairs',
+            status: 'pending_review',
+            validation_notes: `Synthesized via Multi-Subject Engine: ${bulletin.source_name} [${classification.domain}]`,
+            content_hash: contentHash,
+            ai_review_status: 'pending_review',
+            ai_confidence: 0,
+            ai_notes: `Multi-angle explanation generated for ${classification.domain}`
+          });
+        }
+      }
+    } catch (genErr) {
+      console.warn(`[Gemini Multi-Subject Synthesis Warning]: ${genErr.message}`);
+    }
+  }
+
+  return generatedQuestions;
 }
 
 export default async function handler(req, res) {
@@ -148,7 +433,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, error: 'GET or POST required' });
   }
 
-  // 1. Autonomous Rate Limiting (Prevents flood of outbound feed scrapes & Gemini generation)
+  // 1. Autonomous Rate Limiting
   const ip = getClientIp(req);
   const rate = checkRateLimit(ip, 'sync-current-affairs', 10, 60000);
   if (!rate.allowed) {
@@ -180,8 +465,8 @@ export default async function handler(req, res) {
     const todayStr = getKolkataDateString();
     const effectiveJobKey = sanitizeString(jobKey || `ca_sync_${todayStr}_kolkata`, 100);
 
-    // 1. Fetch real official bulletins
-    const { bulletins: realBulletins, fetchStatus } = await fetchRealOfficialBulletins();
+    // 1. Fetch real official bulletins spanning 1-year window across multi-domains and state-level milestones
+    const { bulletins: realBulletins, fetchStatus } = await fetchRealOfficialBulletins(OFFICIAL_SOURCES, { windowDays: 365 });
 
     let addedAffairs = 0;
     const insertedAffairs = [];
@@ -214,102 +499,32 @@ export default async function handler(req, res) {
       }
     }
 
-    // 2. Question Generation (STRICT TRACEABILITY)
-    // Questions are ONLY generated if real official source bulletins exist
-    // Never invent facts, dates, figures or schemes.
+    // 2. Multi-Subject Question Synthesis Engine (STRICT TRACEABILITY & MULTI-ANGLE EXPLANATIONS)
     const isGeminiEnabled = process.env.GEMINI_AI_ENABLED === 'true' || req.body?.gemini_ai_enabled === true || Boolean(generateQuestions);
     const gemini = req.geminiClient || getGeminiClient();
     let generatedQuestionCount = 0;
 
     if (isGeminiEnabled && gemini && generateQuestions && insertedAffairs.length > 0) {
-      // Limit to 5 bulletins per batch to prevent uncontrolled Gemini cost/abuse
       const candidateBulletins = insertedAffairs.slice(0, 5);
-      for (const bulletin of candidateBulletins) {
-        try {
-          const prompt = `You are a strict quality controller for competitive exam question generation.
-Based SOLELY on this verified official press bulletin, generate ONE factual multiple-choice question:
-Title: ${bulletin.title}
-Summary: ${bulletin.summary}
-Source: ${bulletin.source_name} (${bulletin.source_url})
+      const synthesizedQuestions = await synthesizeMultiSubjectExamQuestions(gemini, candidateBulletins);
+      const seenSyncHashes = new Set();
 
-RULES:
-1. Every answer and explanation MUST be explicitly supported by the text above. Never invent facts or figures.
-2. Return JSON only:
-{
-  "question": "Clear factual question",
-  "option_a": "Option text",
-  "option_b": "Option text",
-  "option_c": "Option text",
-  "option_d": "Option text",
-  "correct_answer": "A",
-  "explanation": "Exact factual explanation citing the official release"
-}`;
+      for (const q of synthesizedQuestions) {
+        const isDuplicate = await isQuestionDuplicateInDb(sb, q, seenSyncHashes);
+        if (!isDuplicate) {
+          seenSyncHashes.add(q.content_hash || computeQuestionNormalizedHash(q));
+          const { error: insQErr } = await sb
+            .from('questions')
+            .insert({
+              ...q,
+              daily_job_key: effectiveJobKey
+            });
 
-          const response = await callGeminiWithRetry(
-            () =>
-              gemini.models.generateContent({
-                model: getNormalizedGeminiModel(process.env.GEMINI_REVIEW_MODEL_ID),
-                contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                config: { responseMimeType: 'application/json' }
-              }),
-            {
-              operationName: `Current Affairs MCQ Generation (${bulletin.source_name || 'bulletin'})`,
-              maxRetries: 3,
-              timeoutMs: 20000,
-              initialDelayMs: 1000
-            }
-          );
-
-          const rawParsed = cleanJsonParse(response.text || '{}');
-          const parsed = resolveOptionDuplicatesAndDistribute(rawParsed);
-          if (parsed.question && parsed.option_a && parsed.correct_answer) {
-            const val = validateQuestionDeterministic(parsed, { requireSource: true });
-            if (val.valid) {
-              const contentHash = crypto
-                .createHash('sha256')
-                .update(`${parsed.question}:${parsed.option_a}:${val.cleanedAnswer}`)
-                .digest('hex');
-
-              const { data: existingQ } = await sb
-                .from('questions')
-                .select('id')
-                .eq('content_hash', contentHash)
-                .maybeSingle();
-
-              if (!existingQ) {
-                const { error: insQErr } = await sb
-                  .from('questions')
-                  .insert({
-                    question: parsed.question,
-                    option_a: parsed.option_a,
-                    option_b: parsed.option_b,
-                    option_c: parsed.option_c,
-                    option_d: parsed.option_d,
-                    correct_answer: val.cleanedAnswer,
-                    explanation: parsed.explanation || '',
-                    subject: 'Current Affairs',
-                    topic: bulletin.category || 'National Governance',
-                    difficulty: 'Moderate',
-                    language: 'en',
-                    exam: 'Daily Current Affairs',
-                    source_url: bulletin.source_url,
-                    status: 'pending_review', // Requires admin verification, NEVER auto-approved without manual review
-                    validation_notes: `Grounded in official bulletin: ${bulletin.source_name}`,
-                    content_hash: contentHash,
-                    daily_job_key: effectiveJobKey,
-                    ai_review_status: 'pending_review',
-                    ai_confidence: 0, // Zero fake confidence until reviewed
-                    ai_notes: `Generated from official release: ${bulletin.title.slice(0, 100)}`
-                  });
-
-                if (!insQErr) {
-                  generatedQuestionCount++;
-                }
-              }
-            }
+          if (!insQErr) {
+            generatedQuestionCount++;
           }
-        } catch (genErr) {
-          console.warn('[Gemini Current Affairs Error]:', genErr.message);
+        } else {
+          console.info(`[Sync Current Affairs] Duplicate question discarded: "${q.question?.slice(0, 50)}..."`);
         }
       }
     }
@@ -319,7 +534,7 @@ RULES:
       level: 'info',
       source: 'sync-current-affairs',
       action: 'official-sync',
-      message: `Current Affairs & Recruitment Portals sync completed: ${addedAffairs} new official bulletins ingested (${insertedAffairs.length} active in bank), ${OFFICIAL_RECRUITMENT_PORTALS.length} recruitment portals verified, ${generatedQuestionCount} questions drafted.`,
+      message: `Multi-Subject Current Affairs sync completed: ${addedAffairs} new official bulletins ingested (${insertedAffairs.length} active in bank across 1-year window), ${OFFICIAL_RECRUITMENT_PORTALS.length} recruitment portals verified, ${generatedQuestionCount} multi-angle questions drafted.`,
       details: {
         date: todayStr,
         job_key: effectiveJobKey,

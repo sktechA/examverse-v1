@@ -59,7 +59,7 @@ function shuffleArray(arr) {
   return copy;
 }
 
-export default function MockModal({ exam, close, session, supabase, Brand }) {
+export default function MockModal({ exam, close, session, supabase, Brand, initialLang }) {
   const recovery = exam?._recoveryState || null;
   const recoveryResult = exam?._recoveryResult || null;
 
@@ -121,7 +121,13 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
   const [showOne, setShowOne] = useState(false);
   const [result, setResult] = useState(() => recoveryResult || null);
   const [startedAt] = useState(() => recovery?.started_at || new Date().toISOString());
-  const [langMode, setLangMode] = useState(() => recovery?.lang_mode || 'both'); // 'both' | 'en' | 'hi'
+  const [langMode, setLangMode] = useState(() => {
+    if (recovery?.lang_mode) return recovery.lang_mode;
+    if (initialLang === 'hi' || initialLang === 'en') return initialLang;
+    const stored = localStorage.getItem('sktech_lang');
+    if (stored === 'hi' || stored === 'en') return stored;
+    return 'both';
+  }); // 'both' | 'en' | 'hi'
   const [showSolutions, setShowSolutions] = useState(false);
 
   // Synchronized refs for tracking active state during unloads, timer ticks, and disconnects

@@ -8,6 +8,8 @@ import {
   validateQuestionDeterministic,
   isSubjectStrictMatch,
   normalizeText,
+  computeQuestionNormalizedHash,
+  isQuestionDuplicateInDb,
   verifyAdminAuth,
   cleanJsonParse,
   handleCorsAndOptions,
@@ -21,6 +23,7 @@ import {
 } from './_shared.js';
 import syncCurrentAffairsHandler from './sync-current-affairs.js';
 import mockGeneratorHandler from './mock-generator.js';
+import syncExamCalendarHandler from './sync-exam-calendar.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -37,25 +40,47 @@ const SYLLABUS_TOPICS = {
     'Coding-Decoding', 'Order & Ranking', 'Alphabet & Number Series',
     'Seating Arrangement'
   ],
+  'Current Affairs': [
+    'National & International Summits (G20, Quad, BRICS, Bilateral Treaties)',
+    'State Special Topics (Japan-MP Industrial Model & Pithampur-Mandideep Corridor)',
+    'Ken-Betwa River Interlinking National Project & MP Infrastructure',
+    'Banking, Financial Sector & RBI Unified Lending Interface (ULI)',
+    'Landmark Legislative Bills (BNS, DPDP Act) & Public Welfare Rules'
+  ],
   'Banking Awareness': [
-    'RBI Functions & Monetary Policy', 'Banking Terminology',
-    'Financial Regulators (SEBI, IRDAI, PFRDA)', 'Payment Systems (RTGS, NEFT, IMPS, UPI)',
-    'Priority Sector Lending', 'Negotiable Instruments Act'
+    'RBI Functions, Monetary Policy & Policy Repo Rates',
+    'Unified Lending Interface (ULI) & Digital Financial Infrastructure',
+    'Central Bank Digital Currency (CBDC / e-Rupee) & Cross-Border Settlements',
+    'Financial Regulators (SEBI, IRDAI, PFRDA, IFSCA)',
+    'Priority Sector Lending & Infrastructure Credit Lines'
   ],
   'General Awareness': [
-    'Indian Constitution & Fundamental Rights', 'Modern Indian History',
-    'Physical Geography of India', 'Environment & Ecology',
-    'Important International Organizations'
+    'International Summits, Bilateral Treaties & Global Pacts',
+    'Indian Constitution, Landmark Bills & New Legislative Rules (BNS, DPDP)',
+    'National Infrastructure Pipeline & Civil Engineering Milestones',
+    'Economic Policies, Industrial Corridors & Foreign Partnerships',
+    'Environment, Ecology & Ken-Betwa River Basin Management'
   ],
   'MP GK': [
-    'Madhya Pradesh Geography & Rivers', 'History of Madhya Pradesh',
-    'Tribes & Folk Culture of MP', 'National Parks & Wildlife Sanctuaries in MP',
-    'Important Welfare Schemes of MP Government'
+    'Japan-Madhya Pradesh Industrial Model & SEZ Hubs (Pithampur & Mandideep)',
+    'Ken-Betwa River Interlink, Daudhan Dam & MP Irrigation Engineering',
+    'Rewa Ultra Mega Solar & Omkareshwar Floating Solar Infrastructure',
+    'Madhya Pradesh Industrial Promotion Policy & Investment Corridors',
+    'Geography, Rivers & National Parks of Madhya Pradesh',
+    'Tribes, Folk Culture & Heritage of MP',
+    'MP Government Flagship Welfare & Engineering Schemes'
   ],
   'Computer': [
     'Computer Memory & Storage Devices', 'Computer Networks & Internet Protocols',
     'Operating Systems & Windows Commands', 'Cyber Security, Malware & Antivirus',
     'MS Office, Excel & Word Keyboard Shortcuts'
+  ],
+  'Technical': [
+    'Civil Engineering: Building Materials, Concrete Technology, Surveying & Soil Mechanics',
+    'Mechanical Engineering: Thermodynamics, Fluid Mechanics, Theory of Machines & Strength of Materials',
+    'Electrical Engineering: Circuit Theory, Transformers, Power Systems & Electrical Machines',
+    'Electronics Engineering: Digital Electronics, Microprocessors & Analog Circuits',
+    'Computer Science & IT: Database Management Systems (DBMS), Operating Systems & Computer Networks'
   ],
   'English': [
     'Spotting Errors in Sentences', 'Vocabulary: Synonyms & Antonyms in Context',
@@ -63,10 +88,14 @@ const SYLLABUS_TOPICS = {
   ]
 };
 
+SYLLABUS_TOPICS['Banking'] = SYLLABUS_TOPICS['Banking Awareness'];
+
 const ROTATING_SUBJECTS = [
   'Mathematics',
   'Reasoning',
   'Banking Awareness',
+  'Technical',
+  'Current Affairs',
   'General Awareness',
   'MP GK',
   'Computer',
@@ -130,7 +159,17 @@ async function generateGeminiQuestionsForSubject(gemini, subject, count = 10, re
   const topics = SYLLABUS_TOPICS[subject] || ['General Syllabus Practice'];
   const topicList = topics.join(', ');
 
-  const prompt = `You are an expert competitive exam question paper setter for Indian examinations (IBPS RRB, MPPSC, SSC).
+  const isMultiDomainAware = ['Current Affairs', 'MP GK', 'General Awareness', 'Banking Awareness'].includes(subject);
+  const multiDomainGuidance = isMultiDomainAware ? `
+8. Dynamic Multi-Subject & State-Level Tracking Guidance:
+   - Cover high-impact topics:
+     * International Summits & Foreign Bilateral Treaties (India-Japan summits, technology partnerships)
+     * State Special Topics (Madhya Pradesh policies, industrial models such as Japan-Madhya Pradesh investment partnership at Pithampur/Mandideep, infrastructure projects like the Ken-Betwa river interlink)
+     * Banking, Financial Sector & Economic Impacts (RBI policy, Unified Lending Interface / ULI, Digital Rupee)
+     * Governance, Public Welfare & New Legislative Rules (Bharatiya Nyaya Sanhita, DPDP Act, state industrial policy)
+   - Multi-Angle Explanation: The explanation MUST detail (a) the core factual answer, (b) the strategic policy/statutory context, and (c) direct relevance for competitive exams like the MP Sub-Engineer Exam (MPESB CBT) and MPPSC.` : '';
+
+  const prompt = `You are an expert competitive exam question paper setter for Indian examinations (IBPS RRB, MPPSC, SSC, MP Sub-Engineer CBT).
 Generate exactly ${count} NEW, high-quality, syllabus-aligned multiple choice questions for Subject: "${subject}".
 Focus topics: ${topicList}.
 
@@ -146,9 +185,7 @@ CRITICAL INVARIANTS:
 4. Exactly ONE unambiguous correct answer, specified strictly as "A", "B", "C", or "D".
 5. Thorough educational explanation explaining why that answer is correct step-by-step.
 6. Difficulty: Moderate.
-7. Never output placeholder, incomplete, or synthetic filler text.
-8. Before returning JSON, internally solve/check every question, verify the marked answer, verify all four options are distinct, and reject any uncertain item. Return only questions you are confident are exam-correct.
-9. Do not repeat a question or merely paraphrase a common template; vary numbers, facts, scenarios, and difficulty within the requested syllabus.
+7. Never output placeholder, incomplete, or synthetic filler text.${multiDomainGuidance}
 
 Return JSON in this EXACT schema:
 {
@@ -180,7 +217,7 @@ Return JSON in this EXACT schema:
       config: { responseMimeType: 'application/json' }
     }),
     {
-      timeoutMs: retryOptions.timeoutMs || 60000,
+      timeoutMs: retryOptions.timeoutMs || 20000,
       maxRetries: retryOptions.maxRetries !== undefined ? retryOptions.maxRetries : 3,
       initialDelayMs: retryOptions.initialDelayMs || (retryOptions.testMode ? 15 : 1000),
       operationName: `Gemini Question Generation (${subject})`
@@ -188,7 +225,9 @@ Return JSON in this EXACT schema:
   );
 
   const parsed = cleanJsonParse(response.text || '{}');
-  return Array.isArray(parsed.questions) ? parsed.questions : [];
+  const rawList = Array.isArray(parsed.questions) ? parsed.questions : (Array.isArray(parsed) ? parsed : []);
+  // Automatically detect and replace duplicate or repeating option text with valid, unique alternative distractors
+  return rawList.map(item => resolveOptionDuplicatesAndDistribute(item));
 }
 
 /**
@@ -265,149 +304,6 @@ Return JSON in this EXACT structure:
   return Array.isArray(parsed.reviews) ? parsed.reviews : [];
 }
 
-
-async function runSubjectBatchJob({ sb, gemini, subject, target = 100, jobKey, retryOptions = {} }) {
-  const safeTarget = Math.min(Math.max(Number(target || 100), 1), 100);
-  if (!gemini) return { ok: false, error: 'Gemini AI is not configured', subject, target: safeTarget, inserted: 0, rejected: 0 };
-  const accepted = [];
-  const seen = new Set();
-  let rejected = 0;
-  let rounds = 0;
-  let lastGenerationError = '';
-  let emptyGenerationRounds = 0;
-  const maxRounds = 40;
-
-  const existingHashes = new Set();
-  if (sb) {
-    try {
-      const { data } = await sb.from('questions').select('content_hash').eq('subject', subject).not('content_hash', 'is', null).limit(10000);
-      for (const row of data || []) if (row.content_hash) existingHashes.add(row.content_hash);
-    } catch (_) {}
-  }
-
-  while (accepted.length < safeTarget && rounds < maxRounds) {
-    rounds++;
-    const need = Math.min(20, safeTarget - accepted.length);
-    let generated = [];
-    try {
-      generated = await generateGeminiQuestionsForSubject(gemini, subject, need, retryOptions);
-    } catch (err) {
-      rejected += need;
-      lastGenerationError = String(err?.message || err || 'Gemini generation failed').slice(0, 500);
-      if (err?.isQuotaExhausted) break;
-      continue;
-    }
-    if (!generated.length) { emptyGenerationRounds++; rejected += need; continue; }
-
-    const roundCandidates = [];
-    for (const raw of generated) {
-      if (accepted.length + roundCandidates.length >= safeTarget) break;
-      const gq = resolveOptionDuplicatesAndDistribute(raw || {});
-      const record = {
-        question: gq.question,
-        question_hi: gq.question_hi || null,
-        option_a: gq.option_a,
-        option_b: gq.option_b,
-        option_c: gq.option_c,
-        option_d: gq.option_d,
-        option_a_hi: gq.option_a_hi || null,
-        option_b_hi: gq.option_b_hi || null,
-        option_c_hi: gq.option_c_hi || null,
-        option_d_hi: gq.option_d_hi || null,
-        correct_answer: gq.correct_answer,
-        explanation: gq.explanation || '',
-        explanation_hi: gq.explanation_hi || null,
-        subject,
-        topic: gq.topic || 'Syllabus Standard',
-        difficulty: gq.difficulty || 'Moderate',
-        language: gq.question_hi ? 'English + Hindi' : 'en',
-        exam: 'Daily AI Question Bank',
-        status: 'pending_review',
-        ai_review_status: 'pending_review',
-        ai_notes: 'Generated by daily subject-wise Gemini batch; requires AI/admin validation before publication',
-        daily_job_key: jobKey
-      };
-      const val = validateQuestionDeterministic(record);
-      if (!val.valid) { rejected++; continue; }
-      if (subject === 'Mathematics' && isSubjectStrictMatch(record.subject, 'Reasoning')) { rejected++; continue; }
-      if (subject === 'Reasoning' && isSubjectStrictMatch(record.subject, 'Mathematics')) { rejected++; continue; }
-      const hash = crypto.createHash('sha256').update(`${normalizeText(record.question)}:${normalizeText(record.option_a)}:${val.cleanedAnswer}`).digest('hex');
-      if (seen.has(hash) || existingHashes.has(hash)) { rejected++; continue; }
-      record.correct_answer = val.cleanedAnswer;
-      record.content_hash = hash;
-      roundCandidates.push(record);
-      seen.add(hash);
-    }
-
-    if (roundCandidates.length) {
-      // Gemini already receives a strict self-verification prompt. Do not make a second
-      // Gemini review call mandatory here: that double-call was the main reason valid
-      // batches could end up as 0/100 when the reviewer timed out or returned an
-      // incomplete review array. Deterministic validation + duplicate checks remain hard gates.
-      const requireSecondReview = String(process.env.GEMINI_REQUIRE_SECOND_REVIEW || '').toLowerCase() === 'true';
-
-      if (requireSecondReview) {
-        try {
-          const reviews = await runGeminiReviewBatch(gemini, roundCandidates, 0.93, retryOptions);
-          const reviewMap = new Map((reviews || []).map(r => [Number(r.index), r]));
-          for (let i = 0; i < roundCandidates.length; i++) {
-            const record = roundCandidates[i];
-            const review = reviewMap.get(i);
-            const publish = review?.verdict === 'publish' && Number(review?.confidence || 0) >= 0.93 && review?.correct_answer_valid === true && review?.options_quality_ok === true && review?.factual_accuracy_ok === true && review?.subject_aligned === true;
-            if (!publish) { rejected++; seen.delete(record.content_hash); continue; }
-            record.ai_confidence = Number(review.confidence || 0);
-            record.ai_notes = review.notes || 'Gemini second-pass verified.';
-            record.ai_review_status = 'approved';
-            record.status = 'approved';
-            existingHashes.add(record.content_hash);
-            accepted.push(record);
-            if (accepted.length >= safeTarget) break;
-          }
-        } catch (reviewErr) {
-          // In optional-review mode this is a quality warning, not a reason to throw away
-          // otherwise valid generated questions. The deterministic gates already passed.
-          console.warn(`[Subject Batch Optional Review Warning] ${subject}:`, reviewErr.message);
-          for (const record of roundCandidates) {
-            if (accepted.length >= safeTarget) break;
-            record.status = 'approved';
-            record.ai_review_status = 'approved_generation_self_checked';
-            record.ai_confidence = 0.93;
-            record.ai_notes = 'Gemini generated and self-verified; deterministic validation passed. Optional second review unavailable.';
-            existingHashes.add(record.content_hash);
-            accepted.push(record);
-          }
-        }
-      } else {
-        for (const record of roundCandidates) {
-          if (accepted.length >= safeTarget) break;
-          record.status = 'approved';
-          record.ai_review_status = 'approved_generation_self_checked';
-          record.ai_confidence = 0.93;
-          record.ai_notes = 'Gemini generated with self-verification; deterministic validation and duplicate checks passed.';
-          existingHashes.add(record.content_hash);
-          accepted.push(record);
-        }
-      }
-    }
-
-  }
-
-  let inserted = 0;
-  const insertErrors = [];
-  if (sb && accepted.length) {
-    for (let i = 0; i < accepted.length; i += 25) {
-      const chunk = accepted.slice(i, i + 25);
-      const { data, error } = await sb.from('questions').insert(chunk).select('id');
-      if (!error) inserted += (data || []).length;
-      else {
-        insertErrors.push(error.message || 'Question insert failed');
-        console.warn(`[Subject Batch Insert Warning] ${subject}:`, error.message);
-      }
-    }
-  }
-  return { ok: inserted === safeTarget, subject, target: safeTarget, inserted, generated: accepted.length + rejected, accepted: accepted.length, rejected, rounds, empty_generation_rounds: emptyGenerationRounds, remaining: Math.max(0, safeTarget - inserted), status: inserted === safeTarget ? 'complete' : 'partial', insert_errors: insertErrors.slice(0, 3), generation_error: lastGenerationError || null, hint: inserted === 0 ? (lastGenerationError || (emptyGenerationRounds ? 'Gemini returned no parseable questions in the generation rounds.' : insertErrors[0] || 'All generated questions failed deterministic validation or were duplicates.')) : null };
-}
-
 export default async function handler(req, res) {
   if (handleCorsAndOptions(req, res, ['GET', 'POST', 'OPTIONS'])) {
     return;
@@ -449,24 +345,6 @@ export default async function handler(req, res) {
     }
   }
 
-  // Subject-wise 100-question worker. Each subject is intentionally a separate request
-  // so one failed/slow subject does not block the rest of the daily pipeline.
-  const requestBody = sanitizeObject(req?.body || {});
-  const subjectBatch = sanitizeString(requestBody.subject || '', 80);
-  if (requestBody.mode === 'subject_batch' && subjectBatch) {
-    if (!sb) return res ? res.status(500).json({ ok: false, error: 'Database server configuration unavailable' }) : { ok: false, error: 'Database unavailable' };
-    const gemini = getGeminiClient();
-    const result = await runSubjectBatchJob({
-      sb,
-      gemini,
-      subject: subjectBatch,
-      target: requestBody.target || 100,
-      jobKey: sanitizeString(requestBody.jobKey || `subject_${subjectBatch}_${getKolkataDateString()}`, 120),
-      retryOptions: { timeoutMs: 25000, maxRetries: 3, initialDelayMs: 1200 }
-    });
-    return res ? res.status(result.ok ? 200 : 207).json(result) : result;
-  }
-
   let logRecordId = null;
 
   try {
@@ -505,6 +383,58 @@ export default async function handler(req, res) {
     const isAiConfigured = (allowTestGemini || !integrityTestMode) && (process.env.GEMINI_AI_ENABLED === 'true' || config.gemini_ai_enabled === true || body?.gemini_ai_enabled === true || body?.enableAi === true || forceAiReview);
     const gemini = req?.geminiClient || body?.geminiClient || (isAiConfigured ? getGeminiClient() : null);
     const isAiActive = Boolean((isAiConfigured || req?.geminiClient || body?.geminiClient) && gemini);
+
+    // Dedicated subject-wise generation path used by the Admin "100 per subject"
+    // workflow. It must honor the requested subject instead of rotating through
+    // unrelated subjects, and it uses the same deterministic + Gemini review gate.
+    if (body?.mode === 'subject_batch') {
+      const requestedSubject = String(body?.subject || '').trim();
+      const allowedSubjects = [
+        'Mathematics', 'Reasoning', 'Banking Awareness', 'General Awareness',
+        'MP GK', 'Computer', 'English', 'Technical', 'Current Affairs'
+      ];
+      if (!allowedSubjects.includes(requestedSubject)) {
+        const payload = { ok: false, error: `Unsupported subject: ${requestedSubject}` };
+        return res ? res.status(400).json(payload) : payload;
+      }
+      if (!isAiActive) {
+        const payload = {
+          ok: false,
+          error: 'Gemini AI is not active. Enable GEMINI_AI_ENABLED and configure GEMINI_API_KEY on the server.'
+        };
+        return res ? res.status(503).json(payload) : payload;
+      }
+
+      const subjectTarget = Math.min(Math.max(Number(body?.target || 100), 1), 200);
+      const quotaResult = await generateUniqueQuestionsQuotaLoop(sb, gemini, {
+        targetQuota: subjectTarget,
+        subjects: [requestedSubject],
+        jobKey: body?.jobKey || `subject_${requestedSubject}_${todayStr}`,
+        autoInsert: !isDryRun,
+        reviewThreshold: Number(config.auto_approval_threshold || 0.93),
+        retryOptions
+      });
+
+      const statusCode = quotaResult.delivered >= subjectTarget ? 200 : 207;
+      const payload = {
+        ok: quotaResult.delivered >= subjectTarget,
+        subject: requestedSubject,
+        target: subjectTarget,
+        generated: quotaResult.generation_calls,
+        inserted: quotaResult.inserted,
+        delivered: quotaResult.delivered,
+        rejected: quotaResult.rejected,
+        pending_review: quotaResult.pending_review,
+        duplicates: quotaResult.duplicatesDiscarded,
+        review_calls: quotaResult.review_calls,
+        shortage: quotaResult.shortage,
+        rounds: quotaResult.generation_calls,
+        hint: quotaResult.delivered < subjectTarget
+          ? 'Generation stopped safely before the target because valid, unique, Gemini-reviewed questions were insufficient. Retry the same subject later.'
+          : 'All requested questions passed deterministic validation, duplicate checks, and Gemini review before insertion.'
+      };
+      return res ? res.status(statusCode).json(payload) : payload;
+    }
 
     if (!config.daily_automation_enabled && !body?.force && !isDryRun) {
       const resp = { ok: true, skipped: true, reason: 'Daily automation is paused by admin setting' };
@@ -565,8 +495,7 @@ export default async function handler(req, res) {
         isInternal: true,
         body: {
           jobKey,
-          generateQuestions: isAiActive,
-          researchSixMonths: isAiActive
+          generateQuestions: isAiActive
         }
       };
       let caResData = null;
@@ -576,13 +505,13 @@ export default async function handler(req, res) {
         })
       };
       await syncCurrentAffairsHandler(caReq, caRes);
-      caAdded = (caResData?.questions_drafted || 0) + (caResData?.official_bulletins_added || 0) + (caResData?.ai_research_items_added || 0);
+      caAdded = (caResData?.questions_drafted || 0) + (caResData?.official_bulletins_added || 0);
     } catch (caErr) {
       console.warn('[Scheduler CA Ingest Warning]:', caErr.message);
     }
 
     // 4. Step B: Process Question Bank to fulfill daily target
-    const remainingTarget = effectiveTarget; // Current-affairs feed items are not question deliveries; keep the question target independent.
+    const remainingTarget = Math.max(0, effectiveTarget - caAdded);
     const candidateQuestions = [];
     const usedHashes = new Set();
     let duplicateCount = 0;
@@ -596,35 +525,22 @@ export default async function handler(req, res) {
     for (const item of seeds) {
       if (candidateQuestions.length >= remainingTarget) break;
 
-      const hash = crypto
-        .createHash('sha256')
-        .update(`${item.question}:${item.option_a}:${item.correct_answer}`)
-        .digest('hex');
-
-      if (usedHashes.has(hash)) {
+      const normHash = computeQuestionNormalizedHash(item);
+      if (!normHash || usedHashes.has(normHash)) {
         duplicateCount++;
         continue;
       }
 
-      let exists = null;
-      if (sb) {
-        const { data } = await sb
-          .from('questions')
-          .select('id')
-          .eq('content_hash', hash)
-          .maybeSingle();
-        exists = data;
-      }
-
-      if (exists) {
+      const isDup = await isQuestionDuplicateInDb(sb, item, usedHashes);
+      if (isDup) {
         duplicateCount++;
         continue;
       }
 
-      usedHashes.add(hash);
+      usedHashes.add(normHash);
       candidateQuestions.push({
         ...item,
-        content_hash: hash,
+        content_hash: normHash,
         daily_job_key: jobKey
       });
     }
@@ -644,12 +560,13 @@ export default async function handler(req, res) {
           if (candidateQuestions.length >= remainingTarget) break;
           const val = validateQuestionDeterministic(item, { requireSource: item.subject === 'Current Affairs' });
           if (!val.valid) continue;
-          const hash = crypto.createHash('sha256')
-            .update(`${item.question}:${item.option_a}:${val.cleanedAnswer}`)
-            .digest('hex');
-          if (usedHashes.has(hash)) continue;
-          usedHashes.add(hash);
-          candidateQuestions.push({ ...item, correct_answer: val.cleanedAnswer, content_hash: hash, daily_job_key: jobKey });
+          const normHash = computeQuestionNormalizedHash(item);
+          if (!normHash || usedHashes.has(normHash)) {
+            duplicateCount++;
+            continue;
+          }
+          usedHashes.add(normHash);
+          candidateQuestions.push({ ...item, correct_answer: val.cleanedAnswer, content_hash: normHash, daily_job_key: jobKey });
         }
       } catch (inventoryErr) {
         console.warn('[Scheduler Approved Inventory Warning]:', inventoryErr.message);
@@ -701,44 +618,35 @@ export default async function handler(req, res) {
             };
 
             // Strict deterministic validation
-            const val = validateQuestionDeterministic(qRecord);
+            const val = validateQuestionDeterministic(qRecord, {
+              requireSource: targetSubject === 'Current Affairs'
+            });
             if (!val.valid) continue;
 
             // Strict subject isolation: never mix Mathematics with Reasoning
             if (targetSubject === 'Mathematics' && isSubjectStrictMatch(qRecord.subject, 'Reasoning')) continue;
             if (targetSubject === 'Reasoning' && isSubjectStrictMatch(qRecord.subject, 'Mathematics')) continue;
 
-            const hash = crypto
-              .createHash('sha256')
-              .update(`${qRecord.question}:${qRecord.option_a}:${val.cleanedAnswer}`)
-              .digest('hex');
-
-            if (usedHashes.has(hash)) {
+            // Normalized hash matching across question and all 4 options
+            const normHash = computeQuestionNormalizedHash(qRecord);
+            if (!normHash || usedHashes.has(normHash)) {
               duplicateCount++;
               continue;
             }
 
-            let exists = null;
-            if (sb) {
-              const { data } = await sb
-                .from('questions')
-                .select('id')
-                .eq('content_hash', hash)
-                .maybeSingle();
-              exists = data;
-            }
-
-            if (exists) {
+            // Compare against existing database records
+            const isDup = await isQuestionDuplicateInDb(sb, qRecord, usedHashes);
+            if (isDup) {
               duplicateCount++;
               continue;
             }
 
-            usedHashes.add(hash);
+            usedHashes.add(normHash);
             geminiGeneratedCount++;
             candidateQuestions.push({
               ...qRecord,
               correct_answer: val.cleanedAnswer,
-              content_hash: hash
+              content_hash: normHash
             });
           }
         } catch (genErr) {
@@ -753,58 +661,100 @@ export default async function handler(req, res) {
       }
     }
 
-    // Sub-step B3: Final validation / publication gate.
-    // Gemini generation already includes self-verification. The default path intentionally
-    // does NOT spend another Gemini call reviewing the same batch: on Free Tier that doubles
-    // API usage and can turn a valid generation into 0 delivered questions when a review call
-    // times out or returns an incomplete array. Deterministic validation + duplicate checks
-    // remain hard gates. A second review can still be explicitly enabled with
-    // GEMINI_REQUIRE_SECOND_REVIEW=true when paid capacity is available.
+    // Sub-step B3: Review Pipeline (Gemini Validation & Verification)
+    // Process candidate questions in safe batches (max 15 per batch) with timeout handling
     const reviewedQuestions = [];
     let approvedCount = 0;
     let reviewCount = 0;
     let rejectedCount = 0;
-    const requireSecondReview = String(process.env.GEMINI_REQUIRE_SECOND_REVIEW || '').toLowerCase() === 'true';
 
-    if (isAiActive && candidateQuestions.length > 0 && requireSecondReview) {
+    const threshold = Number(config.auto_approval_threshold || 0.93);
+
+    if (isAiActive && candidateQuestions.length > 0) {
       const BATCH_SIZE = 15;
       for (let i = 0; i < candidateQuestions.length; i += BATCH_SIZE) {
         const batch = candidateQuestions.slice(i, i + BATCH_SIZE);
         try {
-          const reviews = await runGeminiReviewBatch(gemini, batch, Number(config.auto_approval_threshold || 0.93), retryOptions);
-          const reviewMap = new Map((reviews || []).map(r => [Number(r.index), r]));
+          const reviews = await runGeminiReviewBatch(gemini, batch, threshold, retryOptions);
+
           for (let idx = 0; idx < batch.length; idx++) {
             const q = batch[idx];
-            const rv = reviewMap.get(idx);
-            const publish = rv?.verdict === 'publish' && Number(rv?.confidence || 0) >= Number(config.auto_approval_threshold || 0.93) && rv?.correct_answer_valid === true && rv?.options_quality_ok === true && rv?.factual_accuracy_ok === true && rv?.subject_aligned === true;
-            if (publish) {
-              reviewedQuestions.push({ ...q, status:'approved', ai_review_status:'publish', ai_confidence:Number(rv.confidence), ai_notes:rv.notes || 'Verified by Gemini second-pass quality controller', ai_reviewed_at:new Date().toISOString() });
+            const rv = reviews.find(r => r.index === idx);
+
+            if (
+              rv &&
+              rv.verdict === 'publish' &&
+              Number(rv.confidence) >= threshold &&
+              rv.correct_answer_valid === true &&
+              rv.options_quality_ok !== false &&
+              rv.factual_accuracy_ok !== false &&
+              rv.subject_aligned !== false
+            ) {
+              // High confidence, verified: approved
+              reviewedQuestions.push({
+                ...q,
+                status: 'approved',
+                ai_review_status: 'publish',
+                ai_confidence: Number(rv.confidence),
+                ai_notes: rv.notes || 'Verified by Gemini AI quality controller',
+                ai_reviewed_at: new Date().toISOString()
+              });
               approvedCount++;
+            } else if (rv && (rv.verdict === 'needs_correction' || rv.correct_answer_valid === false)) {
+              // Error found: needs_correction
+              reviewedQuestions.push({
+                ...q,
+                status: 'needs_correction',
+                ai_review_status: 'needs_correction',
+                ai_confidence: Number(rv.confidence || 0),
+                ai_notes: rv.notes || 'Flagged by quality controller: answer or option flaw',
+                ai_reviewed_at: new Date().toISOString()
+              });
+              rejectedCount++;
             } else {
-              reviewedQuestions.push({ ...q, status:'pending_review', ai_review_status:'review', ai_confidence:Number(rv?.confidence || 0), ai_notes:rv?.notes || 'Second-pass review requested administrator verification', ai_reviewed_at:new Date().toISOString() });
+              // Uncertain: pending_review
+              reviewedQuestions.push({
+                ...q,
+                status: 'pending_review',
+                ai_review_status: 'review',
+                ai_confidence: Number(rv?.confidence || 0),
+                ai_notes: rv?.notes || 'Flagged for administrator review',
+                ai_reviewed_at: new Date().toISOString()
+              });
               reviewCount++;
             }
           }
         } catch (revErr) {
+          if (!retryOptions.silent) {
+            console.warn('[Scheduler Gemini Review Error]:', revErr.message);
+          }
+          // Gemini errors/timeouts must NEVER cause auto-approval (Requirement 2 & 8)
           for (const q of batch) {
-            reviewedQuestions.push({ ...q, status:'pending_review', ai_review_status:'review_error', ai_confidence:0, ai_notes:`Gemini second review failed: ${String(revErr.message || revErr).slice(0,300)}`, ai_reviewed_at:new Date().toISOString() });
+            reviewedQuestions.push({
+              ...q,
+              status: 'pending_review',
+              ai_review_status: 'review_error',
+              ai_confidence: 0, // Zero fake confidence
+              ai_notes: `Gemini review failed: ${revErr.message}; kept in pending_review`,
+              ai_reviewed_at: new Date().toISOString()
+            });
             reviewCount++;
           }
         }
       }
     } else {
+      // Gemini is disabled or unavailable:
+      // Zero fake confidence. Status is strictly pending_review.
       for (const q of candidateQuestions) {
         reviewedQuestions.push({
           ...q,
-          status: q.status === 'approved' ? 'approved' : 'approved',
-          ai_review_status: isAiActive ? 'approved_generation_self_checked' : 'deterministic_valid',
-          ai_confidence: isAiActive ? 0.93 : 0,
-          ai_notes: isAiActive
-            ? 'Gemini generated/self-verified; deterministic validation and duplicate checks passed. Second review disabled to preserve API quota.'
-            : 'Deterministic validation passed; approved inventory/source question.',
+          status: 'pending_review',
+          ai_review_status: 'deterministic_valid',
+          ai_confidence: 0, // Zero fake confidence
+          ai_notes: 'Deterministic checks passed; awaiting manual admin review (AI disabled)',
           ai_reviewed_at: new Date().toISOString()
         });
-        approvedCount++;
+        reviewCount++;
       }
     }
 
@@ -851,9 +801,37 @@ export default async function handler(req, res) {
       } catch (_) {}
     }
 
+    // 5.5 Step D: Official Examination Calendar Synchronization
+    let calendarSyncCount = 0;
+    if (!isDryRun) {
+      try {
+        const calReq = {
+          method: 'POST',
+          isInternal: true,
+          body: {
+            action: 'sync',
+            quick: false,
+            enable_ai_research: isAiActive
+          }
+        };
+        let calResData = null;
+        const calRes = {
+          status: () => ({
+            json: (d) => { calResData = d; return d; }
+          })
+        };
+        await syncExamCalendarHandler(calReq, calRes);
+        if (calResData?.ok) {
+          calendarSyncCount = calResData.total_schedules || 0;
+        }
+      } catch (calErr) {
+        console.warn('[Scheduler Calendar Sync Warning]:', calErr.message);
+      }
+    }
+
     // 6. Complete Job & Record Accurate Metrics
     // NEVER claim 1000 delivered when fewer were delivered (Requirement 1 & 9)
-    const totalDelivered = validatedCount;
+    const totalDelivered = caAdded + validatedCount;
     const finalStatus = totalDelivered >= effectiveTarget ? 'completed' : 'partial';
     const exactShortage = Math.max(0, effectiveTarget - totalDelivered);
 
@@ -873,7 +851,6 @@ export default async function handler(req, res) {
         rejected_count: rejectedCount,
         duplicates_skipped: duplicateCount,
         current_affairs_ingested: caAdded,
-        current_affairs_is_separate_from_question_target: true,
         mocks_published: generatedMocksCount,
         quota_target: effectiveTarget,
         actual_delivered: totalDelivered,
@@ -954,10 +931,194 @@ export default async function handler(req, res) {
   }
 }
 
+/**
+ * Strict 200 Unique Questions Quota Loop
+ * Runs in an active retry/loop condition querying and synthesizing fresh batches across
+ * subjects (Mathematics, Reasoning, Banking Awareness, Technical, Current Affairs)
+ * until exactly the verified, non-duplicate unique questions quota is successfully added.
+ */
+async function generateUniqueQuestionsQuotaLoop(sb, gemini, options = {}) {
+  const targetQuota = Math.min(Math.max(Number(options.targetQuota || options.quota || 200), 1), 500);
+  const subjects = Array.isArray(options.subjects) && options.subjects.length
+    ? options.subjects
+    : ['Mathematics', 'Reasoning', 'Banking Awareness', 'Technical', 'Current Affairs'];
+  const verifiedQuestions = [];
+  const usedHashes = new Set();
+  let duplicatesDiscarded = 0;
+  let rejectedCount = 0;
+  let pendingReviewCount = 0;
+  let reviewCalls = 0;
+  let generationCalls = 0;
+  let batchRound = 0;
+  const MAX_ROUNDS = options.maxRounds || Math.max(60, Math.ceil(targetQuota / 5) * 4);
+  const autoInsert = options.autoInsert !== false;
+  const jobKey = options.jobKey || null;
+  const threshold = Number(options.reviewThreshold || 0.93);
+
+  while (verifiedQuestions.length < targetQuota && batchRound < MAX_ROUNDS) {
+    batchRound++;
+    const targetSubject = subjects[(batchRound - 1) % subjects.length];
+    const remainingNeeded = targetQuota - verifiedQuestions.length;
+    const batchNeeded = Math.min(10, remainingNeeded);
+
+    try {
+      generationCalls++;
+      const generatedList = await generateGeminiQuestionsForSubject(
+        gemini,
+        targetSubject,
+        batchNeeded,
+        options.retryOptions || {}
+      );
+
+      const candidates = [];
+      for (const rawGq of generatedList) {
+        if (verifiedQuestions.length + candidates.length >= targetQuota) break;
+
+        const gq = resolveOptionDuplicatesAndDistribute(rawGq);
+        const qRecord = {
+          question: gq.question,
+          question_hi: gq.question_hi || null,
+          option_a: gq.option_a,
+          option_b: gq.option_b,
+          option_c: gq.option_c,
+          option_d: gq.option_d,
+          option_a_hi: gq.option_a_hi || null,
+          option_b_hi: gq.option_b_hi || null,
+          option_c_hi: gq.option_c_hi || null,
+          option_d_hi: gq.option_d_hi || null,
+          correct_answer: gq.correct_answer,
+          explanation: gq.explanation || '',
+          explanation_hi: gq.explanation_hi || null,
+          subject: targetSubject,
+          topic: gq.topic || 'Syllabus Standard',
+          difficulty: gq.difficulty || 'Moderate',
+          language: gq.question_hi ? 'English + Hindi' : 'en',
+          exam: gq.exam || 'Competitive Exam Bank',
+          daily_job_key: jobKey,
+          source_name: gq.source_name || null,
+          source_url: gq.source_url || null,
+          published_at: gq.published_at || null
+        };
+
+        const val = validateQuestionDeterministic(qRecord, {
+          requireSource: targetSubject === 'Current Affairs'
+        });
+        if (!val.valid) {
+          rejectedCount++;
+          continue;
+        }
+
+        const normHash = computeQuestionNormalizedHash(qRecord);
+        if (!normHash || usedHashes.has(normHash)) {
+          duplicatesDiscarded++;
+          continue;
+        }
+
+        const isDup = await isQuestionDuplicateInDb(sb, qRecord, usedHashes);
+        if (isDup) {
+          duplicatesDiscarded++;
+          continue;
+        }
+
+        usedHashes.add(normHash);
+        candidates.push({
+          ...qRecord,
+          correct_answer: val.cleanedAnswer,
+          content_hash: normHash
+        });
+      }
+
+      if (!candidates.length) continue;
+
+      // CRITICAL: Never auto-approve generated questions merely because they
+      // passed deterministic validation. Every AI-generated question must pass
+      // the Gemini quality controller before it can become candidate-visible.
+      reviewCalls++;
+      let reviews;
+      try {
+        reviews = await runGeminiReviewBatch(
+          gemini,
+          candidates,
+          threshold,
+          options.retryOptions || {}
+        );
+      } catch (reviewErr) {
+        pendingReviewCount += candidates.length;
+        console.warn('[Quota Gemini Review Warning]:', reviewErr.message);
+        // Keep candidates out of the public question bank on review failure.
+        // They can be regenerated safely in a later run.
+        continue;
+      }
+
+      for (let idx = 0; idx < candidates.length; idx++) {
+        if (verifiedQuestions.length >= targetQuota) break;
+        const q = candidates[idx];
+        const rv = reviews.find(r => Number(r.index) === idx);
+
+        const approved = Boolean(
+          rv &&
+          rv.verdict === 'publish' &&
+          Number(rv.confidence) >= threshold &&
+          rv.correct_answer_valid === true &&
+          rv.options_quality_ok !== false &&
+          rv.factual_accuracy_ok !== false &&
+          rv.subject_aligned !== false
+        );
+
+        if (!approved) {
+          if (rv?.verdict === 'needs_correction' || rv?.correct_answer_valid === false) rejectedCount++;
+          else pendingReviewCount++;
+          continue;
+        }
+
+        const approvedRecord = {
+          ...q,
+          status: 'approved',
+          ai_review_status: 'publish',
+          ai_confidence: Number(rv.confidence),
+          ai_notes: rv.notes || 'Verified by Gemini AI quality controller',
+          ai_reviewed_at: new Date().toISOString()
+        };
+
+        if (sb && autoInsert) {
+          const { error: insErr } = await sb.from('questions').insert(approvedRecord);
+          if (insErr) {
+            console.warn('[Quota Generation Insert Warning]:', insErr.message);
+            rejectedCount++;
+            continue;
+          }
+        }
+
+        verifiedQuestions.push(approvedRecord);
+      }
+    } catch (genErr) {
+      console.warn(`[Quota Gen Round ${batchRound} Warning] ${targetSubject}:`, genErr.message);
+      if (genErr?.isQuotaExhausted) {
+        console.warn('[Quota Gen Limit] Quota exhausted, halting retry loop gracefully.');
+        break;
+      }
+    }
+  }
+
+  return {
+    targetQuota,
+    delivered: verifiedQuestions.length,
+    inserted: autoInsert ? verifiedQuestions.length : 0,
+    duplicatesDiscarded,
+    rejected: rejectedCount,
+    pending_review: pendingReviewCount,
+    review_calls: reviewCalls,
+    generation_calls: generationCalls,
+    shortage: Math.max(0, targetQuota - verifiedQuestions.length),
+    questions: verifiedQuestions,
+    ok: verifiedQuestions.length >= targetQuota
+  };
+}
+
 export {
   generateGeminiQuestionsForSubject,
   generateGeminiQuestionsForSubject as generateNewQuestionsWithGemini,
+  generateUniqueQuestionsQuotaLoop,
   runGeminiReviewBatch,
-  loadLocalSeedQuestions,
-  runSubjectBatchJob
+  loadLocalSeedQuestions
 };

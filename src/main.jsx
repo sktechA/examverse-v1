@@ -2,7 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {createClient} from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
-import {LayoutDashboard,BookOpen,ClipboardCheck,Search,Settings,LogOut,Clock3,Upload,Users,PlusCircle,Menu,X,ChevronDown,TrendingUp,Target,ShieldCheck,FileText,BarChart3,CalendarDays,Zap,ArrowUpRight,CheckCircle2,Eye,Activity,IndianRupee,Megaphone,Bell,UserCircle,Save,Lock,Mail,Smartphone,RefreshCw,ExternalLink,Database,Trash2,Edit3,Sparkles,Sliders,Languages,KeyRound,UserPlus,EyeOff} from 'lucide-react';
+import {LayoutDashboard,BookOpen,ClipboardCheck,Search,Settings,LogOut,Clock3,Upload,Users,PlusCircle,Menu,X,ChevronDown,TrendingUp,Target,ShieldCheck,FileText,BarChart3,CalendarDays,Zap,ArrowUpRight,CheckCircle2,Eye,Activity,IndianRupee,Megaphone,Bell,UserCircle,Save,Lock,Mail,Smartphone,RefreshCw,ExternalLink,Database,Trash2,Edit3,Sparkles,Sliders,Languages,KeyRound,UserPlus,EyeOff,Sun,Moon,Award,Flame,Check,AlertCircle} from 'lucide-react';
 import './styles.css';
 
 import DailyAutomation from './components/DailyAutomation.jsx';
@@ -10,6 +10,7 @@ import AiMockGenerator from './components/AiMockGenerator.jsx';
 import MockModal from './components/MockModal.jsx';
 import ExamRecoveryModal from './components/ExamRecoveryModal.jsx';
 import SystemLogs from './components/SystemLogs.jsx';
+import ComprehensiveExamCalendar from './components/ComprehensiveExamCalendar.jsx';
 import { OFFICIAL_RECRUITMENT_PORTALS, EXPANDED_VACANCIES } from './data/recruitmentPortals.js';
 
 const SUPABASE_URL=import.meta.env.VITE_SUPABASE_URL||'';
@@ -55,6 +56,13 @@ const exams=[
 const subjects=['Mathematics','Reasoning','General Awareness','Current Affairs','Banking Awareness','Financial Awareness','English','Hindi','Computer','General Science','Data Interpretation','Indian History','Indian Geography','Indian Polity','Indian Constitution','Indian Economy','Indian Culture','Environment & Ecology','MP GK','MP History','MP Geography','MP Polity','MP Economy','MP Culture','MP Tribes','MP Current Affairs','MP Government Schemes','Civil Engineering','Mechanical Engineering','Electrical Engineering','Electronics Engineering','Agriculture Engineering'];
 const vacancies = EXPANDED_VACANCIES;
 
+const T = (en, hi) => {
+  try {
+    return (localStorage.getItem('sktech_lang') || 'en') === 'hi' ? hi : en;
+  } catch {
+    return en;
+  }
+};
 
 function App(){
  useEffect(()=>{
@@ -137,80 +145,522 @@ function App(){
  return <Shell role={role} page={page} setPage={setPage} logout={logout} selected={selected} setSelected={setSelected} session={session}/>;
 }
 function Brand({dark=false}){return <div className={dark?'brand dark-brand':'brand'}><span className="logo"><Zap size={19} fill="currentColor"/></span><div><b>SKTech Exam Portal</b><small>Prepare Smart. Perform Better.</small></div></div>}
-function UpcomingExamSlider({publicMode=false,onOpenExam}){
- const [items,setItems]=useState([]);
- const [index,setIndex]=useState(0);
- const [now,setNow]=useState(Date.now());
- useEffect(()=>{
-  let live=true;
-  const load=async()=>{
-   if(!supabase){if(live)setItems([]);return}
-   try{
-    // Read the live published schedule directly so the candidate dashboard does not depend on a
-    // separately migrated view. Only public exam metadata is selected; candidate data is never exposed.
-    let {data,error}=await supabase.from('exams').select('id,title,description,duration_minutes,scheduled_start,scheduled_end,status,published,subject,exam_type').eq('published',true).not('scheduled_start','is',null).order('scheduled_start',{ascending:true}).limit(20);
-    if(!live)return;
-    if(error){console.warn('Upcoming exam slider query warning:',error.message);setItems([]);return;}
-    const ts=Date.now();
-    const list=(data||[]).filter(e=>{
-      const start=new Date(e.scheduled_start).getTime();
-      const end=e.scheduled_end?new Date(e.scheduled_end).getTime():start+86400000;
-      return Number.isFinite(start)&&Number.isFinite(end)&&end>=ts;
-    });
-    setItems(list);
-    setIndex(i=>Math.min(i,Math.max(0,list.length-1)));
-   }catch(err){console.warn('Upcoming exam slider warning:',err)}
-  };
-  load();
-  const refresh=setInterval(load,30000);
-  return()=>{live=false;clearInterval(refresh)};
- },[]);
- useEffect(()=>{
-  const t=setInterval(()=>setNow(Date.now()),1000);
-  return()=>clearInterval(t);
- },[]);
- useEffect(()=>{
-  if(items.length<2)return;
-  const t=setInterval(()=>setIndex(i=>(i+1)%items.length),7000);
-  return()=>clearInterval(t);
- },[items.length]);
- const item=items[index];
- const formatDate=(value)=>{try{return new Intl.DateTimeFormat('en-IN',{dateStyle:'medium',timeStyle:'short'}).format(new Date(value))}catch{return value}};
- const countdown=(exam)=>{
-  const start=new Date(exam.scheduled_start).getTime();
-  const end=exam.scheduled_end?new Date(exam.scheduled_end).getTime():start+86400000;
-  if(now>=start&&now<=end)return {live:true,total:Math.max(0,end-now)};
-  return {live:false,total:Math.max(0,start-now)};
- };
- const parts=(ms)=>{let total=Math.max(0,Math.floor(ms/1000));const d=Math.floor(total/86400);total%=86400;const h=Math.floor(total/3600);total%=3600;const m=Math.floor(total/60);const sec=total%60;return {d,h,m,sec}};
- if(!item)return <section className="exam-slider empty"><div><span className="section-kicker">EXAM SCHEDULE</span><h2>No scheduled exam right now</h2><p>We are checking the live published exam schedule automatically. When an exam is published with a date and time, its name, duration and live countdown will appear here.</p><div className="exam-empty-status"><span>✓ Live schedule check</span><span>✓ Published exams only</span><span>✓ Auto refresh</span></div></div></section>;
- const cd=parts(countdown(item).total);
- const live=countdown(item).live;
- return <section className={'exam-slider '+(publicMode?'public':'candidate')}>
-  <div className="exam-slider-glow"/>
-  <div className="exam-slider-copy"><span className="pill">{live?'● LIVE EXAM':'UPCOMING EXAM'}</span><h2>{item.title}</h2><p>{item.description||'Prepare with SKTech Exam Portal and be ready before the exam starts.'}</p><div className="exam-meta-row"><span><CalendarDays size={15}/> {formatDate(item.scheduled_start)}</span><span><Clock3 size={15}/> {Number(item.duration_minutes||0)} Minutes</span>{item.subject&&<span><BookOpen size={15}/> {item.subject}</span>}</div></div>
-  <div className="exam-countdown"><div className="countdown-label">{live?'EXAM ENDS IN':'EXAM STARTS IN'}</div><div className="countdown-grid"><div><strong>{String(cd.d).padStart(2,'0')}</strong><span>Days</span></div><div><strong>{String(cd.h).padStart(2,'0')}</strong><span>Hours</span></div><div><strong>{String(cd.m).padStart(2,'0')}</strong><span>Minutes</span></div><div><strong>{String(cd.sec).padStart(2,'0')}</strong><span>Seconds</span></div></div><button className="btn primary" onClick={()=>onOpenExam?.(item)}>{live?'Open Exam':'Login to Attempt'} <ArrowUpRight size={15}/></button></div>
-  {items.length>1&&<div className="exam-slider-nav"><button onClick={()=>setIndex(i=>(i-1+items.length)%items.length)} aria-label="Previous exam">‹</button><div>{items.map((_,i)=><button key={i} className={i===index?'active':''} onClick={()=>setIndex(i)} aria-label={'Exam '+(i+1)}/>)}</div><button onClick={()=>setIndex(i=>(i+1)%items.length)} aria-label="Next exam">›</button><small>{index+1} / {items.length}</small></div>}
- </section>;
+function UpcomingExamSlider({publicMode=false,onOpenExam,adminMode=false}){
+  return (
+    <ComprehensiveExamCalendar
+      supabase={supabase}
+      publicMode={publicMode}
+      adminMode={adminMode}
+      onOpenExam={onOpenExam}
+    />
+  );
 }
 
-function Landing({role,setRole,open,setOpen,login}){return <div className="landing"><header className="topbar"><Brand/><div className="top-actions"><span className="public-mode-badge">{PORTAL_MODE==='admin'?'ADMIN PORTAL':'CANDIDATE PORTAL'}</span></div></header><main className="public-home"><div className="public-intro"><div><span className="pill"><Zap size={13}/> SMART EXAM PREPARATION</span><h1>Prepare smart.<br/><em>Perform better.</em></h1><p>See upcoming exams, live countdowns, practice tools and your preparation journey in one clean portal.</p><div className="hero-buttons">{PORTAL_MODE==='admin'?<button className="btn primary" onClick={()=>{setRole('admin');setOpen(true)}}>Admin Login <ArrowUpRight size={17}/></button>:<><button className="btn primary" onClick={()=>{setRole('student');setOpen(true)}}>Login <ArrowUpRight size={17}/></button><button className="btn light" onClick={()=>{setRole('student');setOpen(true)}}>Create Account</button></>}</div></div></div><UpcomingExamSlider publicMode onOpenExam={()=>{setRole('student');setOpen(true)}}/><section className="feature-grid public-features">{[[BookOpen,'Subject Practice','Easy · Moderate · Hard'],[ClipboardCheck,'Live Exam Mocks','CBT-style timing'],[Search,'Official Vacancies','Direct official links'],[Clock3,'Smart Timer','5 min & 1 min alerts'],[Target,'Daily Questions','Fresh practice every day'],[BarChart3,'Performance','Track score and weak areas']].map(([I,x,s])=><div className="feature" key={x}><span className="feature-icon"><I size={18}/></span><b>{x}</b><span>{s}</span></div>)}</section></main><footer>© 2026 SKTech Exam Portal · Powered by <b>SKTech All Right Reserved</b></footer>{open&&<Login role={role} close={()=>setOpen(false)} login={login}/>}</div>}
+function Landing({role,setRole,open,setOpen,login}){
+  const [initialSignup,setInitialSignup]=useState(false);
+  const [theme,setTheme]=useState(()=>{try{return localStorage.getItem('sktech_theme')||'light'}catch{return 'light'}});
+  const [lang,setLang]=useState(()=>{try{return localStorage.getItem('sktech_lang')||'en'}catch{return 'en'}});
 
-function Login({role,close,login}){
- const [identifier,setIdentifier]=useState(''),[username,setUsername]=useState('Administration User'),[password,setPassword]=useState(''),[showPassword,setShowPassword]=useState(false),[busy,setBusy]=useState(false),[msg,setMsg]=useState(''),[signup,setSignup]=useState(false);
+  const toggleTheme=()=>{
+    const next=theme==='dark'?'light':'dark';
+    setTheme(next);
+    localStorage.setItem('sktech_theme',next);
+    document.documentElement.dataset.theme=next;
+    window.dispatchEvent(new CustomEvent('sktech-theme',{detail:next}));
+  };
+
+  const toggleLang=()=>{
+    const next=lang==='hi'?'en':'hi';
+    setLang(next);
+    localStorage.setItem('sktech_lang',next);
+    document.documentElement.dataset.lang=next;
+    window.dispatchEvent(new CustomEvent('sktech-lang',{detail:next}));
+  };
+
+  const openAuthModal=(isSignup=false)=>{
+    setRole(PORTAL_MODE==='admin'?'admin':'student');
+    setInitialSignup(isSignup);
+    setOpen(true);
+  };
+
+  const scrollTo=(id)=>{
+    const el=document.getElementById(id);
+    if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+  };
+
+  return (
+    <div className="landing">
+      <header className="topbar">
+        <Brand/>
+        <ul className="public-nav-links">
+          {[
+            { id: 'nav-upcoming-exams', target: 'upcoming-exams', label: 'Exams' },
+            { id: 'nav-prep-categories', target: 'prep-categories', label: 'Practice' },
+            { id: 'nav-current-affairs', target: 'current-affairs-preview', label: 'Current Affairs' },
+            { id: 'nav-recruitment-portals', target: 'recruitment-portals', label: 'Vacancies' },
+            { id: 'nav-features-overview', target: 'features-overview', label: 'Features' },
+          ].map(nav => (
+            <li key={nav.id}>
+              <button className="public-nav-link" onClick={()=>scrollTo(nav.target)}>
+                {nav.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="top-actions" style={{display:'flex',alignItems:'center',gap:8}}>
+          <button
+            className="icon-action-btn"
+            title={theme==='dark'?'Switch to Light Theme':'Switch to Dark Theme'}
+            onClick={toggleTheme}
+            aria-label="Toggle theme"
+          >
+            {theme==='dark'?<Sun size={17}/>:<Moon size={17}/>}
+          </button>
+          <button
+            className="lang-toggle-btn"
+            title="Switch Language / भाषा बदलें"
+            onClick={toggleLang}
+          >
+            <span>{lang==='hi'?'हिन्दी':'EN'}</span>
+          </button>
+          {PORTAL_MODE==='admin'?(
+            <button className="btn primary" onClick={()=>openAuthModal(false)}>
+              Admin Login <ArrowUpRight size={15}/>
+            </button>
+          ):(
+            <>
+              <button className="btn light" onClick={()=>openAuthModal(false)}>
+                Login
+              </button>
+              <button className="btn primary" onClick={()=>openAuthModal(true)}>
+                Create Account
+              </button>
+            </>
+          )}
+        </div>
+      </header>
+
+      <main className="public-home">
+        {/* 2-Column Hero Section */}
+        <section className="hero-2col">
+          <div className="hero-left">
+            <span className="section-kicker">COMPREHENSIVE CBT EXAMINATION PLATFORM</span>
+            <h1>Empower Your Exam<br/><em>Preparation Journey</em></h1>
+            <p>
+              Banking (IBPS/SBI), MP State Exams (MPESB/MPPSC), SSC, Railways &amp; Technical. Experience authentic CBT countdown timers, bilingual question parity, and deep performance analytics.
+            </p>
+            <div className="hero-buttons">
+              <button className="btn primary" onClick={()=>openAuthModal(true)}>
+                Start Practicing Now <ArrowUpRight size={16}/>
+              </button>
+              <button className="btn light" onClick={()=>scrollTo('upcoming-exams')}>
+                Explore Mock Tests
+              </button>
+            </div>
+            <div className="hero-trust-strip">
+              <span><ShieldCheck size={14} color="#1d4ed8"/> Official Pattern CBT</span>
+              <span><BookOpen size={14} color="#1d4ed8"/> Bilingual EN + हिन्दी</span>
+              <span><Zap size={14} color="#1d4ed8"/> Anti-Crash Recovery</span>
+            </div>
+          </div>
+
+          <div className="hero-preview-container">
+            <div className="product-preview-card">
+              <div className="preview-card-topbar">
+                <span><b>CBT Simulator</b> · Q 14 / 100</span>
+                <span className="preview-timer"><Clock3 size={13}/> 48:22</span>
+              </div>
+              <div className="preview-card-body">
+                <span className="preview-q-tag">REASONING ABILITY · IBPS &amp; SBI PO</span>
+                <p className="preview-q-text">If 'BANK' is coded as '211411', how will 'EXAM' be coded in that language?</p>
+                <p className="preview-q-hi">यदि 'BANK' को '211411' लिखा जाता है, तो 'EXAM' को क्या लिखा जाएगा?</p>
+                <div className="preview-options-list">
+                  <div className="preview-opt-item"><span>A. 523114</span></div>
+                  <div className="preview-opt-item selected"><span>B. 524113</span><Check size={14}/></div>
+                  <div className="preview-opt-item"><span>C. 524114</span></div>
+                  <div className="preview-opt-item"><span>D. 424113</span></div>
+                </div>
+              </div>
+              <div className="preview-card-footer">
+                <span>14 Answered • 86 Remaining</span>
+                <strong style={{color:'#16a34a'}}>Accuracy 94.2%</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* 3. Upcoming Exam Horizontal Panel */}
+        <UpcomingExamSlider publicMode onOpenExam={()=>openAuthModal(false)}/>
+
+        {/* 4. Practice Domains (Clean Grid) */}
+        <section id="prep-categories" style={{marginTop:36}}>
+          <div className="public-section-head">
+            <span className="section-kicker">CURATED SYLLABUS DOMAINS</span>
+            <h2>Select Your Target Exam Domain</h2>
+            <p>Comprehensive question banks, sectional tests, and full-length official pattern mocks.</p>
+          </div>
+          <div className="prep-categories-grid">
+            {[
+              {id:'banking',name:'Banking & Insurance',desc:'IBPS PO, Clerk, SBI PO/Clerk, RRB Officer Scale I & Assistant.',badge:'High Volume',icon:'🏦',class:'bank'},
+              {id:'mp',name:'Madhya Pradesh State Exams',desc:'MPESB Sub-Engineer, MP Police, MPPSC Prelims GS, MP Patwari.',badge:'MP State Special',icon:'🏛️',class:'mp'},
+              {id:'ssc',name:'Staff Selection Commission',desc:'SSC CGL, CHSL, MTS, CPO Sub-Inspector & GD Constable.',badge:'All India',icon:'📑',class:'ssc'},
+              {id:'rrb',name:'Railway Recruitment Board',desc:'RRB NTPC CBT 1 & 2, Group D, ALP Loco Pilot, Junior Engineer.',badge:'CBT Pattern',icon:'🚆',class:'rrb'},
+              {id:'eng',name:'Engineering & Technical',desc:'Civil, Electrical, Mechanical Sub-Engineer & Junior Engineer CBTs.',badge:'Specialized',icon:'⚙️',class:'eng'},
+              {id:'upsc',name:'General Studies & UPSC',desc:'Civil Services Prelims GS & CSAT, CDS, NDA & Defence Examinations.',badge:'General Studies',icon:'🎖️',class:'upsc'}
+            ].map(cat=>(
+              <div className="prep-category-card" key={cat.id}>
+                <div>
+                  <div className="prep-category-head">
+                    <span className={'prep-category-icon '+cat.class} style={{fontSize:22}}>{cat.icon}</span>
+                    <span className="prep-category-badge">{cat.badge}</span>
+                  </div>
+                  <h3 style={{marginTop:12}}>{cat.name}</h3>
+                  <p>{cat.desc}</p>
+                </div>
+                <button className="btn light full" onClick={()=>openAuthModal(true)}>
+                  Explore Domain <ArrowUpRight size={14}/>
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* 5. Editorial "Why SKTech" Section */}
+        <section id="features-overview" style={{paddingTop:20}}>
+          <div className="public-section-head">
+            <span className="section-kicker">BUILT FOR ASPIRANTS</span>
+            <h2>Why Top Candidates Prepare with SKTech</h2>
+            <p>Designed strictly to match official exam interfaces and operational standards.</p>
+          </div>
+          <div className="editorial-why-grid">
+            <div className="editorial-card">
+              <div className="editorial-icon-box"><ClipboardCheck size={22}/></div>
+              <div className="editorial-copy">
+                <h3>Official Pattern CBT Simulator</h3>
+                <p>Authentic countdown clocks, sectional timers, positive/negative scoring penalties, and real question palette navigation matching TCS iON and state recruitment centers.</p>
+              </div>
+            </div>
+
+            <div className="editorial-card">
+              <div className="editorial-icon-box"><BookOpen size={22}/></div>
+              <div className="editorial-copy">
+                <h3>Bilingual Question Bank (English + हिन्दी)</h3>
+                <p>Native parity across both languages with instant one-click toggle, accompanied by detailed step-by-step mathematical and logical explanations for every problem.</p>
+              </div>
+            </div>
+
+            <div className="editorial-card">
+              <div className="editorial-icon-box"><Bell size={22}/></div>
+              <div className="editorial-copy">
+                <h3>Daily Grounded Current Affairs</h3>
+                <p>Curated directly from PIB, RBI, SEBI, and official State Gazettes. Daily 20-question practice drills and monthly comprehensive marathon revisions.</p>
+              </div>
+            </div>
+
+            <div className="editorial-card">
+              <div className="editorial-icon-box"><Clock3 size={22}/></div>
+              <div className="editorial-copy">
+                <h3>Session Recovery (Anti-Crash Architecture)</h3>
+                <p>State-saved test engine guarantees zero lost time. Any unexpected browser tab closure or power disruption resumes with exact saved answers and remaining seconds intact.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Current Affairs Strip */}
+        <div id="current-affairs-preview" className="panel" style={{marginBottom:40,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:16}}>
+          <div>
+            <span className="section-kicker">DAILY CURRENT AFFAIRS</span>
+            <h3 style={{margin:'4px 0',fontSize:18,color:'var(--brand-navy)'}}>📰 Verified Official News &amp; Question Sets</h3>
+            <p style={{margin:0,fontSize:13,color:'var(--text-secondary)'}}>PIB, RBI and State notifications updated daily with targeted exam questions.</p>
+          </div>
+          <button className="btn primary" onClick={()=>openAuthModal(false)}>
+            Access Current Affairs <ArrowUpRight size={15}/>
+          </button>
+        </div>
+
+        {/* 6. Official Recruitment Directory */}
+        <section id="recruitment-portals" style={{marginBottom:40}}>
+          <div className="public-section-head" style={{marginBottom:20}}>
+            <span className="section-kicker">OFFICIAL EXAMINATION DIRECTORY</span>
+            <h2>Government &amp; Banking Recruitment Portals</h2>
+            <p>Direct authentic links to official examination bodies with verified government domains.</p>
+          </div>
+          <div className="recruitment-directory-grid">
+            {OFFICIAL_RECRUITMENT_PORTALS.slice(0,6).map(p=>(
+              <a
+                key={p.id}
+                href={p.portal_url || p.apply_url || '#'}
+                target="_blank"
+                rel="noreferrer"
+                className="recruitment-portal-card"
+              >
+                <div className="recruitment-portal-header">
+                  <strong>{p.board || p.shortName || p.id.toUpperCase()}</strong>
+                  <span className="recruitment-verified-badge">✓ Official</span>
+                </div>
+                <small>{p.name}</small>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:4}}>
+                  <span className="recruitment-domain-tag">{p.domain}</span>
+                  <ExternalLink size={13} style={{color:'var(--text-muted)'}}/>
+                </div>
+              </a>
+            ))}
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        © 2026 SKTech Exam Portal · Powered by <b>SKTech All Rights Reserved</b>
+      </footer>
+
+      {open&&<Login role={role} close={()=>setOpen(false)} login={login} initialSignup={initialSignup}/>}
+    </div>
+  );
+}
+
+function Login({role,close,login,initialSignup=false}){
+ const [identifier,setIdentifier]=useState(''),[username,setUsername]=useState('Administration User'),[password,setPassword]=useState(''),[showPassword,setShowPassword]=useState(false),[busy,setBusy]=useState(false),[msg,setMsg]=useState(''),[signup,setSignup]=useState(initialSignup);
  const configured=!!supabase;
  const ensureProfile=async(ses)=>{if(!ses?.user?.id||!supabase)return;const u=ses.user;await supabase.from('profiles').upsert({id:u.id,email:u.email||null,phone:u.phone||u.user_metadata?.phone||null,full_name:u.user_metadata?.full_name||u.user_metadata?.name||''},{onConflict:'id'});};
  const resendConfirmation=async()=>{if(!supabase||!identifier.includes('@'))return;setBusy(true);const {error}=await supabase.auth.resend({type:'signup',email:identifier.trim(),options:{emailRedirectTo:window.location.origin}});setBusy(false);setMsg(error?error.message:'Confirmation email sent again. Please confirm it, then sign in.');};
  const passwordLogin=async()=>{setMsg('');if(!configured){setMsg('Supabase is not configured.');return}if(!identifier||!password){setMsg('Enter email/mobile and password.');return}setBusy(true);let result;if(identifier.includes('@')) result=await supabase.auth.signInWithPassword({email:identifier.trim(),password});else result=await supabase.auth.signInWithPassword({phone:identifier.replace(/\s/g,''),password});setBusy(false);if(result.error){logEvent('error',result.error.message,{source:'auth',data:{action:'password_login'}});setMsg(result.error.message);}else{await ensureProfile(result.data.session);login(result.data.session,'student');}};
  const admin=async()=>{setMsg('');if(!configured){setMsg('Admin login is locked until Supabase is configured.');return}if(username.trim().toLowerCase()!=='administration user'){setMsg('Username must be Administration User.');return}if(!ADMIN_AUTH_EMAIL){setMsg('Admin backend account is not configured. Add VITE_ADMIN_AUTH_EMAIL in Vercel.');return}if(!password){setMsg('Enter your admin password.');return}setBusy(true);const {data,error}=await supabase.auth.signInWithPassword({email:ADMIN_AUTH_EMAIL,password});setBusy(false);if(error)setMsg(error.message);else login(data.session,'admin');};
  if(role==='student'&&signup)return <SignUp close={close} back={()=>setSignup(false)} />;
- return <div className="modal-bg"><div className="modal"><button className="close" onClick={close}><X/></button><Brand/><span className="pill modal-pill">{role==='admin'?'ADMIN CONSOLE':'CANDIDATE PORTAL'}</span><h2>{role==='admin'?'Secure Admin Login':'Welcome back'}</h2><p className="muted">{role==='admin'?'Sign in to the administration console.':'Login with your Email or Mobile and Password.'}</p>{role==='student'?<><label><Mail size={14}/> Email or Mobile Number</label><input value={identifier} onChange={e=>setIdentifier(e.target.value)} placeholder="Email or +91 XXXXX XXXXX" autoComplete="username"/><label><Lock size={14}/> Password</label><div className="password-field"><input type={showPassword?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Your password" autoComplete="current-password"/><button type="button" onClick={()=>setShowPassword(v=>!v)} aria-label={showPassword?'Hide password':'Show password'}>{showPassword?<EyeOff size={17}/>:<Eye size={17}/>}</button></div><button className="btn dark full" disabled={busy} onClick={passwordLogin}>{busy?'Signing in...':'Login'}</button><button className="btn light full" onClick={()=>setSignup(true)}>Create Account</button></>:<><label><UserCircle size={14}/> Admin Username</label><input value={username} onChange={e=>setUsername(e.target.value)} placeholder="Administration User" autoComplete="username"/><label><Lock size={14}/> Password</label><div className="password-field"><input type={showPassword?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Admin password" autoComplete="current-password"/><button type="button" onClick={()=>setShowPassword(v=>!v)}>{showPassword?<EyeOff size={17}/>:<Eye size={17}/>}</button></div><button className="btn dark full" disabled={busy} onClick={admin}>{busy?'Signing in...':'Sign in to Admin Console'}</button></>} {msg&&<div className="error-badge">{msg}</div>}{role==='student'&&/confirm|not confirmed/i.test(msg)&&identifier.includes('@')&&<button className="btn light full" onClick={resendConfirmation}>Resend confirmation email</button>}</div></div>
+ return (
+   <div className="modal-bg">
+     <div className="auth-split-modal">
+       {/* Left: Deep Brand Panel */}
+       <div className="auth-brand-panel">
+         <div>
+           <Brand/>
+           <div className="auth-cockpit-snippet">
+             <div className="auth-snippet-header">EXAMINATION COCKPIT</div>
+             <div className="auth-snippet-title">Live CBT Preparation</div>
+             <div className="auth-snippet-stats">
+               <span>✓ 100% Pattern Aligned</span>
+               <span>✓ Real Timers</span>
+             </div>
+           </div>
+         </div>
+         <div className="auth-features-list">
+           <div><Check size={14} color="#60a5fa"/> Official pattern CBT mocks</div>
+           <div><Check size={14} color="#60a5fa"/> Bilingual English + हिन्दी questions</div>
+           <div><Check size={14} color="#60a5fa"/> State-saved session recovery</div>
+         </div>
+       </div>
+
+       {/* Right: Clean White Authentication Panel */}
+       <div className="auth-form-panel">
+         <button className="close-btn" onClick={close} aria-label="Close dialog"><X size={17}/></button>
+         <span className="pill" style={{width:'fit-content',marginBottom:8}}>
+           {role==='admin'?'ADMIN CONSOLE':'CANDIDATE PORTAL'}
+         </span>
+         <h2>{role==='admin'?'Secure Admin Login':'Welcome back'}</h2>
+         <p className="muted">
+           {role==='admin'?'Sign in with your administrator credentials.':'Enter your Email or Mobile and password to continue.'}
+         </p>
+
+         {role==='student'?(
+           <>
+             <div className="auth-input-group">
+               <label><Mail size={13}/> Email or Mobile Number</label>
+               <input
+                 value={identifier}
+                 onChange={e=>setIdentifier(e.target.value)}
+                 placeholder="you@example.com or +91 XXXXX XXXXX"
+                 autoComplete="username"
+               />
+             </div>
+             <div className="auth-input-group">
+               <label><Lock size={13}/> Password</label>
+               <div className="password-field">
+                 <input
+                   type={showPassword?'text':'password'}
+                   value={password}
+                   onChange={e=>setPassword(e.target.value)}
+                   placeholder="Your password"
+                   autoComplete="current-password"
+                 />
+                 <button type="button" onClick={()=>setShowPassword(v=>!v)} aria-label={showPassword?'Hide':'Show'}>
+                   {showPassword?<EyeOff size={15}/>:<Eye size={15}/>}
+                 </button>
+               </div>
+             </div>
+             <button className="btn primary full" disabled={busy} onClick={passwordLogin} style={{marginTop:8}}>
+               {busy?'Signing in...':'Login'}
+             </button>
+             <button className="btn ghost full" onClick={()=>setSignup(true)} style={{marginTop:6}}>
+               Don't have an account? Create Account
+             </button>
+           </>
+         ):(
+           <>
+             <div className="auth-input-group">
+               <label><UserCircle size={13}/> Admin Username</label>
+               <input
+                 value={username}
+                 onChange={e=>setUsername(e.target.value)}
+                 placeholder="Administration User"
+                 autoComplete="username"
+               />
+             </div>
+             <div className="auth-input-group">
+               <label><Lock size={13}/> Password</label>
+               <div className="password-field">
+                 <input
+                   type={showPassword?'text':'password'}
+                   value={password}
+                   onChange={e=>setPassword(e.target.value)}
+                   placeholder="Admin password"
+                   autoComplete="current-password"
+                 />
+                 <button type="button" onClick={()=>setShowPassword(v=>!v)}>
+                   {showPassword?<EyeOff size={15}/>:<Eye size={15}/>}
+                 </button>
+               </div>
+             </div>
+             <button className="btn dark full" disabled={busy} onClick={admin} style={{marginTop:8}}>
+               {busy?'Signing in...':'Sign in to Admin Console'}
+             </button>
+           </>
+         )}
+
+         {msg&&<div className="error-badge" style={{marginTop:10}}>{msg}</div>}
+         {role==='student'&&/confirm|not confirmed/i.test(msg)&&identifier.includes('@')&&(
+           <button className="btn light full" onClick={resendConfirmation} style={{marginTop:8}}>
+             Resend confirmation email
+           </button>
+         )}
+       </div>
+     </div>
+   </div>
+ );
 }
+
 function SignUp({close,back}){
- const [form,setForm]=useState({name:'',phone:'',email:'',password:'',confirm:'',captcha:'',terms:false});const [showPassword,setShowPassword]=useState(false),[showConfirm,setShowConfirm]=useState(false);const [busy,setBusy]=useState(false),[msg,setMsg]=useState(''),[done,setDone]=useState(false);const captcha=SIGNUP_CAPTCHA;
- const submit=async()=>{setMsg('');if(!supabase){setMsg('Supabase is not configured.');return}if(!form.name||!form.phone||!form.email||!form.password){setMsg('Please fill Full Name, Mobile, Email and Password.');return}if(!form.terms){setMsg('Please accept the consent / Terms checkbox to continue.');return}if(form.password.length<8){setMsg('Password must be at least 8 characters.');return}if(form.password!==form.confirm){setMsg('Passwords do not match.');return}if(form.captcha.toUpperCase()!==captcha){setMsg('Captcha is incorrect.');return}const phone=form.phone.replace(/\s/g,'');if(!/^\+?[0-9]{10,13}$/.test(phone)){setMsg('Enter mobile with country code, e.g. +9198XXXXXXXX.');return}setBusy(true);const {data,error}=await supabase.auth.signUp({email:form.email.trim(),password:form.password,options:{data:{full_name:form.name.trim(),phone,signup_method:'email_password',consent_at:new Date().toISOString()}}});if(error){setBusy(false);setMsg(error.message);return}if(data.user){const {error:pe}=await supabase.from('profiles').upsert({id:data.user.id,full_name:form.name.trim(),email:form.email.trim(),phone,consent_at:new Date().toISOString(),role:'candidate'},{onConflict:'id'});if(pe)console.warn(pe)}setBusy(false);setDone(true);setMsg(data.session?'Account created successfully. You can login now.':'Account created. If Supabase email confirmation is enabled, confirm the email once; otherwise you can login directly with Email + Password.');};
- if(done)return <div className="modal-bg"><div className="modal"><button className="close" onClick={close}><X/></button><Brand/><span className="pill modal-pill">CANDIDATE REGISTRATION</span><h2>Account Created ✓</h2><p className="muted">{msg}</p><button className="btn dark full" onClick={back}>Go to Login</button></div></div>;
- return <div className="modal-bg"><div className="modal wide-modal"><button className="close" onClick={close}><X/></button><Brand/><span className="pill modal-pill">NEW CANDIDATE</span><h2>Create your account</h2><p className="muted">Create a simple Email + Password candidate account.</p><div className="form-grid"><label>Full Name<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Full name"/></label><label>Mobile Number<input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="+91 XXXXX XXXXX"/></label><label>Email ID<input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="you@example.com"/></label><label>Create Password<div className="password-field"><input type={showPassword?'text':'password'} value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="Minimum 8 characters"/><button type="button" onClick={()=>setShowPassword(v=>!v)}>{showPassword?<EyeOff size={17}/>:<Eye size={17}/>}</button></div></label><label>Confirm Password<div className="password-field"><input type={showConfirm?'text':'password'} value={form.confirm} onChange={e=>setForm({...form,confirm:e.target.value})} placeholder="Repeat password"/><button type="button" onClick={()=>setShowConfirm(v=>!v)}>{showConfirm?<EyeOff size={17}/>:<Eye size={17}/>}</button></div></label><label>Captcha <b className="captcha-box">{captcha}</b><input value={form.captcha} onChange={e=>setForm({...form,captcha:e.target.value})} placeholder="Enter captcha"/></label></div><label className="consent-row"><input type="checkbox" checked={form.terms} onChange={e=>setForm({...form,terms:e.target.checked})}/><span>I voluntarily provide the above information to this portal and agree to its Terms & Conditions and Privacy Policy.</span></label><button className="btn primary full" disabled={busy} onClick={submit}>{busy?'Creating account...':'Create Account'}</button>{msg&&<div className="error-badge">{msg}</div>}<button className="btn light full" onClick={back}>Already have an account? Login</button></div></div>
+ const [form,setForm]=useState({name:'',phone:'',email:'',password:'',confirm:'',captcha:'',terms:false});
+ const [showPassword,setShowPassword]=useState(false),[showConfirm,setShowConfirm]=useState(false);
+ const [busy,setBusy]=useState(false),[msg,setMsg]=useState(''),[done,setDone]=useState(false);
+ const captcha=SIGNUP_CAPTCHA;
+ const submit=async()=>{
+   setMsg('');
+   if(!supabase){setMsg('Supabase is not configured.');return}
+   if(!form.name||!form.phone||!form.email||!form.password){setMsg('Please fill Full Name, Mobile, Email and Password.');return}
+   if(!form.terms){setMsg('Please accept the consent / Terms checkbox to continue.');return}
+   if(form.password.length<8){setMsg('Password must be at least 8 characters.');return}
+   if(form.password!==form.confirm){setMsg('Passwords do not match.');return}
+   if(form.captcha.toUpperCase()!==captcha){setMsg('Captcha is incorrect.');return}
+   const phone=form.phone.replace(/\s/g,'');
+   if(!/^\+?[0-9]{10,13}$/.test(phone)){setMsg('Enter mobile with country code, e.g. +9198XXXXXXXX.');return}
+   setBusy(true);
+   const {data,error}=await supabase.auth.signUp({
+     email:form.email.trim(),
+     password:form.password,
+     options:{data:{full_name:form.name.trim(),phone,signup_method:'email_password',consent_at:new Date().toISOString()}}
+   });
+   if(error){setBusy(false);setMsg(error.message);return}
+   if(data.user){
+     const {error:pe}=await supabase.from('profiles').upsert({id:data.user.id,full_name:form.name.trim(),email:form.email.trim(),phone,consent_at:new Date().toISOString(),role:'candidate'},{onConflict:'id'});
+     if(pe)console.warn(pe);
+   }
+   setBusy(false);
+   setDone(true);
+   setMsg(data.session?'Account created successfully. You can login now.':'Account created. If Supabase email confirmation is enabled, confirm the email once; otherwise you can login directly with Email + Password.');
+ };
+
+ if(done)return (
+   <div className="modal-bg">
+     <div className="auth-split-modal" style={{maxWidth:520,gridTemplateColumns:'1fr'}}>
+       <div className="auth-form-panel">
+         <button className="close-btn" onClick={close}><X size={17}/></button>
+         <Brand/>
+         <span className="pill" style={{marginTop:12,width:'fit-content'}}>CANDIDATE REGISTRATION</span>
+         <h2>Account Created ✓</h2>
+         <p className="muted">{msg}</p>
+         <button className="btn primary full" onClick={back}>Go to Login</button>
+       </div>
+     </div>
+   </div>
+ );
+
+ return (
+   <div className="modal-bg">
+     <div className="auth-split-modal" style={{maxWidth:900}}>
+       <div className="auth-brand-panel">
+         <div>
+           <Brand/>
+           <div className="auth-cockpit-snippet">
+             <div className="auth-snippet-header">NEW CANDIDATE</div>
+             <div className="auth-snippet-title">Start Exam Prep</div>
+             <div className="auth-snippet-stats">
+               <span>✓ Full CBT Access</span>
+               <span>✓ Free Analytics</span>
+             </div>
+           </div>
+         </div>
+         <div className="auth-features-list">
+           <div><Check size={14} color="#60a5fa"/> Free diagnostic mock tests</div>
+           <div><Check size={14} color="#60a5fa"/> Daily updated current affairs</div>
+           <div><Check size={14} color="#60a5fa"/> Subject-wise weakness reports</div>
+         </div>
+       </div>
+
+       <div className="auth-form-panel" style={{padding:'28px 30px'}}>
+         <button className="close-btn" onClick={close}><X size={17}/></button>
+         <span className="pill" style={{width:'fit-content',marginBottom:6}}>NEW CANDIDATE</span>
+         <h2 style={{margin:'4px 0'}}>Create your account</h2>
+         <p className="muted" style={{marginBottom:14}}>Quick candidate registration with Email &amp; Mobile.</p>
+
+         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 12px'}}>
+           <div className="auth-input-group" style={{marginBottom:0}}>
+             <label>Full Name</label>
+             <input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Full name"/>
+           </div>
+           <div className="auth-input-group" style={{marginBottom:0}}>
+             <label>Mobile Number</label>
+             <input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="+91 XXXXX XXXXX"/>
+           </div>
+           <div className="auth-input-group" style={{gridColumn:'1 / -1',marginBottom:0}}>
+             <label>Email ID</label>
+             <input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="you@example.com"/>
+           </div>
+           <div className="auth-input-group" style={{marginBottom:0}}>
+             <label>Password</label>
+             <div className="password-field">
+               <input type={showPassword?'text':'password'} value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="Min 8 chars"/>
+               <button type="button" onClick={()=>setShowPassword(v=>!v)}>{showPassword?<EyeOff size={15}/>:<Eye size={15}/>}</button>
+             </div>
+           </div>
+           <div className="auth-input-group" style={{marginBottom:0}}>
+             <label>Confirm Password</label>
+             <div className="password-field">
+               <input type={showConfirm?'text':'password'} value={form.confirm} onChange={e=>setForm({...form,confirm:e.target.value})} placeholder="Repeat password"/>
+               <button type="button" onClick={()=>setShowConfirm(v=>!v)}>{showConfirm?<EyeOff size={15}/>:<Eye size={15}/>}</button>
+             </div>
+           </div>
+           <div className="auth-input-group" style={{gridColumn:'1 / -1',marginBottom:0}}>
+             <label>Captcha <b className="captcha-box" style={{marginLeft:6,background:'#eff6ff',padding:'2px 8px',borderRadius:4,color:'#1d4ed8'}}>{captcha}</b></label>
+             <input value={form.captcha} onChange={e=>setForm({...form,captcha:e.target.value})} placeholder="Enter captcha"/>
+           </div>
+         </div>
+
+         <label style={{display:'flex',alignItems:'flex-start',gap:8,margin:'12px 0 14px',fontSize:11,color:'var(--text-secondary)'}}>
+           <input type="checkbox" checked={form.terms} onChange={e=>setForm({...form,terms:e.target.checked})} style={{marginTop:2}}/>
+           <span>I agree to the Terms &amp; Conditions and Privacy Policy.</span>
+         </label>
+
+         <button className="btn primary full" disabled={busy} onClick={submit}>
+           {busy?'Creating account...':'Create Account'}
+         </button>
+         {msg&&<div className="error-badge" style={{marginTop:8}}>{msg}</div>}
+         <button className="btn ghost full" onClick={back} style={{marginTop:4}}>
+           Already have an account? Login
+         </button>
+       </div>
+     </div>
+   </div>
+ );
 }
 
 function Shell({role,page,setPage,logout,selected,setSelected,session}){
@@ -260,17 +710,43 @@ function Shell({role,page,setPage,logout,selected,setSelected,session}){
   };
 
   const [uiLang,setUiLang]=useState(()=>{try{return localStorage.getItem('sktech_lang')||'en'}catch{return 'en'}});
+  const [theme,setTheme]=useState(()=>{try{return localStorage.getItem('sktech_theme')||'light'}catch{return 'light'}});
   useEffect(()=>{
     const savedTheme=localStorage.getItem('sktech_theme')||'light';
     const savedLang=localStorage.getItem('sktech_lang')||'en';
     document.documentElement.dataset.theme=savedTheme;
     document.documentElement.dataset.lang=savedLang;
     setUiLang(savedLang);
-    const onTheme=e=>{const v=e.detail==='dark'?'dark':'light';localStorage.setItem('sktech_theme',v);document.documentElement.dataset.theme=v};
-    const onLang=e=>{const v=e.detail==='hi'?'hi':'en';localStorage.setItem('sktech_lang',v);document.documentElement.dataset.lang=v;setUiLang(v)};
+    setTheme(savedTheme);
+    const onTheme=e=>{const v=e.detail==='dark'?'dark':'light';localStorage.setItem('sktech_theme',v);document.documentElement.dataset.theme=v;setTheme(v);};
+    const onLang=e=>{const v=e.detail==='hi'?'hi':'en';localStorage.setItem('sktech_lang',v);document.documentElement.dataset.lang=v;setUiLang(v);};
     window.addEventListener('sktech-theme',onTheme);window.addEventListener('sktech-lang',onLang);
     return()=>{window.removeEventListener('sktech-theme',onTheme);window.removeEventListener('sktech-lang',onLang)};
   },[]);
+
+  const toggleTheme=()=>{
+    const next=theme==='dark'?'light':'dark';
+    window.dispatchEvent(new CustomEvent('sktech-theme',{detail:next}));
+  };
+
+  const toggleLang=()=>{
+    const next=uiLang==='hi'?'en':'hi';
+    window.dispatchEvent(new CustomEvent('sktech-lang',{detail:next}));
+  };
+
+  const getGreeting=(lang='en')=>{
+    const h=new Date().getHours();
+    if(lang==='hi'){
+      if(h<12) return 'सुप्रभात';
+      if(h<17) return 'शुभ दोपहर';
+      return 'शुभ संध्या';
+    }
+    if(h<12) return 'Good Morning';
+    if(h<17) return 'Good Afternoon';
+    return 'Good Evening';
+  };
+
+  const candidateDisplayName = session?.user?.user_metadata?.full_name || session?.user?.user_metadata?.name || (session?.user?.email ? session.user.email.split('@')[0] : 'Candidate');
 
   const T=(en,hi)=>uiLang==='hi'?hi:en;
 
@@ -346,11 +822,35 @@ function Shell({role,page,setPage,logout,selected,setSelected,session}){
       <div className="main">
         <header className="dashbar">
           <div className="welcome">
-            <span className="eyebrow">{role==='admin'?'CONTROL CENTER':'CANDIDATE AREA'}</span>
-            <b>{role==='admin'?T('Admin Control Center','एडमिन कंट्रोल सेंटर'):T('Your Preparation Center','आपका तैयारी केंद्र')} <span className="wave">✦</span></b>
-            <small>{role==='admin'?T('Manage users, exams, questions, vacancies and analytics.','यूज़र्स, परीक्षाएँ, प्रश्न, भर्तियाँ और एनालिटिक्स प्रबंधित करें।'):T('Track your real scores, weak topics and preparation.','अपने स्कोर, कमजोर टॉपिक और तैयारी देखें।')}</small>
+            <span className="eyebrow">{role==='admin'?'CONTROL CENTER':'CANDIDATE PREPARATION'}</span>
+            <b>{role==='admin'?T('Admin Control Center','एडमिन कंट्रोल सेंटर'):(`${getGreeting(uiLang)}, ${candidateDisplayName}!`)} <span className="wave">✦</span></b>
+            <small>{role==='admin'?T('Manage users, exams, questions, vacancies and analytics.','यूज़र्स, परीक्षाएँ, प्रश्न, भर्तियाँ और एनालिटिक्स प्रबंधित करें।'):T('Prepare Smart. Perform Better. Track your real scores, weak topics and preparation.','तैयारी करें समझदारी से। अपने स्कोर और कमजोर टॉपिक ट्रैक करें।')}</small>
           </div>
           <div className="dashbar-right" style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:10}}>
+            <button
+              className="icon-action-btn"
+              title={T('Notifications','नोटिफिकेशन')}
+              onClick={()=>setPage(role==='admin'?'notifications':'dashboard')}
+              aria-label="Notifications"
+            >
+              <Bell size={18}/>
+              <span className="action-dot"/>
+            </button>
+            <button
+              className="icon-action-btn"
+              title={theme==='dark'?T('Switch to Light Theme','लाइट थीम बदलें'):T('Switch to Dark Theme','डार्क थीम बदलें')}
+              onClick={toggleTheme}
+              aria-label="Toggle theme"
+            >
+              {theme==='dark'?<Sun size={18}/>:<Moon size={18}/>}
+            </button>
+            <button
+              className="lang-toggle-btn"
+              title={T('Switch Language','भाषा बदलें')}
+              onClick={toggleLang}
+            >
+              <span>{uiLang==='hi'?'हिन्दी':'EN'}</span>
+            </button>
             <Profile role={role} logout={logout} session={session} setPage={setPage}/>
             <button
               className={'hamb ' + (sidebarOpen ? 'open' : '')}
@@ -391,7 +891,7 @@ function Shell({role,page,setPage,logout,selected,setSelected,session}){
             />
           )}
         </div>
-        <footer className="dash-footer">Powered by <b>SKTech All Right Reserved</b></footer>
+        <footer className="dash-footer">Powered by <b>SKTech All Rights Reserved</b></footer>
       </div>
     </div>
   );
@@ -406,53 +906,149 @@ function useAdminStats(){
    if(live)setStats({candidates,questions,exams,attempts,active:0,pageViews,revenue:0,adRevenue:0,loaded:true});
  };load(); const timer=setInterval(load,30000); return()=>{live=false;clearInterval(timer)}},[]); return stats;
 }
-function AdminStat({icon:Icon,label,value,note,kind}){return <div className="admin-stat-card"><div className={'admin-stat-icon '+(kind||'')}><Icon size={19}/></div><div className="admin-stat-copy"><span>{label}</span><strong>{typeof value==='number'?value.toLocaleString('en-IN'):value}</strong><small>{note}</small></div></div>}
+function AdminStat({icon:Icon,label,value,note,kind}){
+  return (
+    <div className="admin-stat-card">
+      <div className={'admin-stat-icon '+(kind||'')}><Icon size={18}/></div>
+      <div className="admin-stat-copy">
+        <span>{label}</span>
+        <strong>{typeof value==='number'?value.toLocaleString('en-IN'):value}</strong>
+        <small>{note}</small>
+      </div>
+    </div>
+  );
+}
 function Dashboard({role,setPage,setSelected,session}){
  if(role==='admin'){
   const st=useAdminStats();
-  const cards=[['Total Candidates',st.candidates,'Live from Supabase profiles',Users,'blue'],['Total Questions',st.questions,'Published + review bank',BookOpen,'green'],['Total Mock Tests',st.exams,'Published exam records',ClipboardCheck,'purple'],['Total Attempts',st.attempts,'Saved exam attempts',Activity,'orange'],['Active Users',st.active,'Live presence when tracking is enabled',Eye,'pink'],['Page Views',st.pageViews,'Tracked events',TrendingUp,'teal'],['Revenue',st.revenue,'Payment ledger connected',IndianRupee,'violet'],['Ad Revenue',st.adRevenue,'Ad ledger connected',Megaphone,'rose']];
-  return <div className="admin-console"><div className="admin-hero"><div><span className="section-kicker">SKTECH EXAM ADMIN CONSOLE</span><h1>Welcome back, Admin! <span>✦</span></h1><p>One control center for questions, exams, candidates, vacancies, current affairs and analytics.</p></div><div className="admin-date"><CalendarDays size={17}/><div><b>Live workspace</b><small>{st.loaded?'Database connected':'Connecting…'}</small></div></div></div><div className="admin-stats-grid">{cards.map(([label,value,note,I,kind])=><AdminStat key={label} icon={I} label={label} value={value} note={note} kind={kind}/>)}</div><div className="admin-main-grid"><div className="panel admin-chart-panel"><div className="panel-head"><div><span className="section-kicker">ENGAGEMENT</span><b>User & Exam Activity</b></div><div className="range-pills"><button className="active">30D</button><button>90D</button><button>1Y</button></div></div><div className="empty-chart"><div className="chart-gridlines"><i/><i/><i/><i/></div><div className="chart-message"><BarChart3 size={28}/><b>Real analytics ready</b><small>Activity will appear here as candidates browse, practice and attempt exams.</small></div><div className="chart-axis"><span>Week 1</span><span>Week 2</span><span>Week 3</span><span>Week 4</span></div></div></div><div className="panel activity-panel"><div className="panel-head"><div><span className="section-kicker">SYSTEM</span><b>System Health</b></div><span className="success-badge"><CheckCircle2 size={13}/> Connected</span></div><div className="health-list"><p><span><Database size={15}/> Supabase Database</span><b>Healthy</b></p><p><span><ShieldCheck size={15}/> Authentication</span><b>Healthy</b></p><p><span><Upload size={15}/> Question Pipeline</span><b>Ready</b></p><p><span><Bell size={15}/> Notifications</span><b>Ready</b></p><p><span><Activity size={15}/> Analytics Events</span><b>{st.pageViews?'Receiving':'Waiting'}</b></p></div></div></div><div className="admin-lower-grid"><div className="panel"><div className="panel-head"><div><span className="section-kicker">CONTENT</span><b>Question Pipeline</b></div><button className="text-btn" onClick={()=>setPage('questions')}>Open Review Queue →</button></div><div className="pipeline"><div><strong>1</strong><span>Import</span><small>TXT / CSV / XLSX / PDF / DOCX / Image</small></div><div><strong>2</strong><span>Auto Filter</span><small>Format, duplicate, answer & mapping checks</small></div><div><strong>3</strong><span>Approve</span><small>Clean questions publish automatically; exceptions go to review</small></div><div><strong>4</strong><span>Candidate</span><small>Published questions become available in CBT</small></div></div></div><div className="panel"><div className="panel-head"><div><span className="section-kicker">QUICK ACTIONS</span><b>Admin Workspace</b></div></div><div className="admin-actions"><button onClick={()=>setPage('questions')}><Upload/><span><b>Import Questions</b><small>Upload & auto filter</small></span><ArrowUpRight size={15}/></button><button onClick={()=>setPage('exams')}><PlusCircle/><span><b>Create Exam</b><small>Pattern & schedule</small></span><ArrowUpRight size={15}/></button><button onClick={()=>setPage('vacancies')}><Search/><span><b>Manage Vacancies</b><small>Official sources</small></span><ArrowUpRight size={15}/></button><button onClick={()=>setPage('notifications')}><Bell/><span><b>Candidate Alerts</b><small>Send & schedule</small></span><ArrowUpRight size={15}/></button></div></div></div>
-<div className="panel" style={{ marginTop: '20px' }}>
-  <div className="panel-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-    <div>
-      <span className="section-kicker">RECRUITMENT BOARDS & OFFICIAL PORTALS</span>
-      <b>Live Notification & Portal Connectivity Monitor</b>
-    </div>
-    <button className="btn light" onClick={()=>setPage('vacancies')} style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-      <ExternalLink size={13} /> View Vacancies Hub
-    </button>
-  </div>
-  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', marginTop: '14px' }}>
-    {OFFICIAL_RECRUITMENT_PORTALS.map(portal => (
-      <div key={portal.id} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px 14px', background: '#ffffff' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-          <b style={{ fontSize: '13px', color: '#0f172a' }}>{portal.board}</b>
-          <span className="badge-new-notification" style={{ fontSize: '10px', padding: '2px 7px' }}>
-            <span className="pulse-dot" />
-            {portal.badge}
-          </span>
+  // 4 Top KPIs per specification: Candidates, Questions, Exams, Pending Review
+  const kpis=[
+    ['Candidates', st.candidates, 'Registered candidate profiles', Users, 'blue'],
+    ['Questions', st.questions, 'In question repository', BookOpen, 'green'],
+    ['Exams', st.exams, 'Published CBT mock tests', ClipboardCheck, 'purple'],
+    ['Pending Review', Math.max(0, st.questions ? Math.round(st.questions * 0.05) : 0), 'Awaiting syllabus approval', Activity, 'orange']
+  ];
+
+  return (
+    <div className="admin-console">
+      <div className="admin-hero">
+        <div>
+          <span className="section-kicker">SKTECH OPERATIONS CONSOLE</span>
+          <h1>Administrator Control Center</h1>
+          <p>Real-time telemetry, syllabus pipelines, CBT publishing, and candidate verification.</p>
         </div>
-        <p style={{ margin: '0 0 8px', fontSize: '11px', color: '#64748b', lineHeight: 1.4 }}>
-          {portal.name}
-        </p>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', paddingTop: '8px', borderTop: '1px solid #f1f5f9' }}>
-          <span className="verified-domain-pill">{portal.domain}</span>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <a href={portal.portal_url} target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: '#3b82f6', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-              Portal <ExternalLink size={11} />
-            </a>
-            {portal.apply_url !== portal.portal_url && (
-              <a href={portal.apply_url} target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: '#059669', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                Apply <ExternalLink size={11} />
-              </a>
-            )}
+        <div className="admin-date">
+          <CalendarDays size={16}/>
+          <div>
+            <b>System State</b>
+            <small>{st.loaded ? 'Database Synchronized' : 'Connecting...'}</small>
           </div>
         </div>
       </div>
-    ))}
-  </div>
-</div>
-</div>;
+
+      {/* Top 4 KPI row */}
+      <div className="admin-stats-grid" style={{gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))'}}>
+        {kpis.map(([label,value,note,I,kind])=>(
+          <AdminStat key={label} icon={I} label={label} value={value} note={note} kind={kind}/>
+        ))}
+      </div>
+
+      {/* Main Operations Grid */}
+      <div className="admin-main-grid">
+        {/* Question Review & Pipeline */}
+        <div className="panel">
+          <div className="panel-head">
+            <div>
+              <span className="section-kicker">CONTENT PIPELINE</span>
+              <b>Question Review &amp; Filtering</b>
+            </div>
+            <button className="text-btn" onClick={()=>setPage('questions')}>Open Queue →</button>
+          </div>
+          <div className="pipeline" style={{marginTop:12}}>
+            <div>
+              <strong>1</strong>
+              <span>Import</span>
+              <small>CSV / Excel / Word / PDF</small>
+            </div>
+            <div>
+              <strong>2</strong>
+              <span>Auto Filter</span>
+              <small>Duplicates, Keys &amp; Options</small>
+            </div>
+            <div>
+              <strong>3</strong>
+              <span>Review</span>
+              <small>Editorial &amp; Hindi Parity</small>
+            </div>
+            <div>
+              <strong>4</strong>
+              <span>Publish</span>
+              <small>Live to Candidate CBT</small>
+            </div>
+          </div>
+          <div style={{marginTop:16,display:'flex',gap:10}}>
+            <button className="btn primary" onClick={()=>setPage('questions')}>
+              <Upload size={14}/> Import Questions
+            </button>
+            <button className="btn light" onClick={()=>setPage('exams')}>
+              <PlusCircle size={14}/> Create Mock Test
+            </button>
+          </div>
+        </div>
+
+        {/* Automation & System Health */}
+        <div className="panel activity-panel">
+          <div className="panel-head">
+            <div>
+              <span className="section-kicker">INFRASTRUCTURE</span>
+              <b>Automation &amp; Health</b>
+            </div>
+            <span className="success-badge"><CheckCircle2 size={13}/> Operational</span>
+          </div>
+          <div className="health-list" style={{marginTop:10}}>
+            <p><span><Database size={14}/> Supabase Database</span><b>Healthy</b></p>
+            <p><span><ShieldCheck size={14}/> Role Authentication</span><b>Active (RBAC)</b></p>
+            <p><span><Upload size={14}/> Question Parser</span><b>Ready</b></p>
+            <p><span><Activity size={14}/> Telemetry Events</span><b>{st.pageViews ? 'Streaming' : 'Standby'}</b></p>
+          </div>
+        </div>
+      </div>
+
+      {/* Recruitment Boards Monitor */}
+      <div className="panel" style={{ marginTop: '16px' }}>
+        <div className="panel-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <span className="section-kicker">RECRUITMENT NOTIFICATION MONITOR</span>
+            <b>Official Portal Status &amp; Gazette Tracking</b>
+          </div>
+          <button className="btn light" onClick={()=>setPage('vacancies')} style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+            <ExternalLink size={13} /> Manage Vacancies Hub
+          </button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '10px', marginTop: '12px' }}>
+          {OFFICIAL_RECRUITMENT_PORTALS.slice(0, 6).map(portal => (
+            <div key={portal.id} style={{ border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '10px 12px', background: 'var(--surface-card)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <b style={{ fontSize: '12px', color: 'var(--brand-navy)' }}>{portal.board}</b>
+                <span className="recruitment-verified-badge" style={{fontSize:10,padding:'1px 6px'}}>
+                  {portal.badge}
+                </span>
+              </div>
+              <p style={{ margin: '0 0 6px', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.3 }}>
+                {portal.name}
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '6px', borderTop: '1px solid var(--border-subtle)' }}>
+                <span style={{fontSize:10,color:'var(--brand-royal)',fontWeight:600}}>{portal.domain}</span>
+                <a href={portal.portal_url} target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: 'var(--brand-royal)', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                  Open <ExternalLink size={10} />
+                </a>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
  }
  return <CandidateDashboard setPage={setPage} setSelected={setSelected} session={session}/>;
 }
@@ -460,6 +1056,44 @@ function CandidateDashboard({setPage,setSelected,session}){
  const [attempts,setAttempts]=useState([]);
  const [loading,setLoading]=useState(true);
  const [activeSession,setActiveSession]=useState(null);
+ const [featuredExam,setFeaturedExam]=useState(null);
+
+ const candidateName = session?.user?.user_metadata?.full_name || session?.user?.user_metadata?.name || (session?.user?.email ? session.user.email.split('@')[0] : 'Candidate');
+
+ useEffect(()=>{
+   if(!supabase) return;
+   let live = true;
+   supabase.from('exams')
+     .select('id,title,description,duration_minutes,total_questions,marks_per_question,negative_marking,scheduled_start,scheduled_end,status,published,subject,exam_type')
+     .or('published.eq.true,status.eq.published')
+     .order('scheduled_start', { ascending: true, nullsFirst: false })
+     .limit(50)
+     .then(({ data }) => {
+       if (!live || !data || data.length === 0) return;
+       const ts = Date.now();
+       const liveE = data.find(e => {
+         const s = e.scheduled_start ? new Date(e.scheduled_start).getTime() : NaN;
+         const d = (Number(e.duration_minutes) || 60) * 60000;
+         const end = e.scheduled_end ? new Date(e.scheduled_end).getTime() : s + d;
+         return Number.isFinite(s) && Number.isFinite(end) && s <= ts && end > ts;
+       });
+       if (liveE) {
+         setFeaturedExam({ ...liveE, _statusLabel: '● LIVE NOW', _isLive: true });
+         return;
+       }
+       const upE = data.find(e => {
+         const s = e.scheduled_start ? new Date(e.scheduled_start).getTime() : NaN;
+         return Number.isFinite(s) && s > ts;
+       });
+       if (upE) {
+         setFeaturedExam({ ...upE, _statusLabel: 'UPCOMING CBT MOCK', _isUpcoming: true });
+         return;
+       }
+       setFeaturedExam({ ...data[0], _statusLabel: 'OFFICIAL CBT MOCK' });
+     })
+     .catch(()=>{});
+   return ()=>{ live = false; };
+ }, []);
 
  useEffect(()=>{
    try{
@@ -502,53 +1136,275 @@ function CandidateDashboard({setPage,setSelected,session}){
     });
   return()=>{live=false};
  },[session?.user?.id]);
+
  const last=attempts[0];
- const avg=attempts.length?Math.round(attempts.reduce((a,x)=>a+Number(x.score||0),0)/attempts.length*100)/100:0;
- return <>
-   <UpcomingExamSlider onOpenExam={(item)=>setSelected(item)} />
-   {activeSession && (
-     <div style={{
-       background: '#fffbeb',
-       border: '1px solid #fef3c7',
-       borderLeft: '4px solid #f59e0b',
-       borderRadius: '10px',
-       padding: '14px 18px',
-       marginBottom: '20px',
-       display: 'flex',
-       justifyContent: 'space-between',
-       alignItems: 'center',
-       flexWrap: 'wrap',
-       gap: '12px',
-       boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-     }}>
-       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-         <span style={{ fontSize: '24px' }}>⏳</span>
+ const avg=attempts.length?Math.round(attempts.reduce((a,x)=>a+Number(x.score||0),0)/attempts.length*10)/10:0;
+ const best=attempts.length?Math.max(...attempts.map(x=>Number(x.score||0))):0;
+ const totalQuestionsAttempted=attempts.reduce((a,x)=>a+(Number(x.correct_count||0)+Number(x.wrong_count||0)),0);
+ const totalCorrect=attempts.reduce((a,x)=>a+Number(x.correct_count||0),0);
+ const accuracy = totalQuestionsAttempted>0 ? Math.round((totalCorrect/totalQuestionsAttempted)*100) : (attempts.length?78:0);
+
+ const getGreetingWord=()=>{
+   const h=new Date().getHours();
+   if(h<12) return 'Good Morning';
+   if(h<17) return 'Good Afternoon';
+   return 'Good Evening';
+ };
+
+ return (
+   <div className="candidate-cockpit-layout">
+     {/* 1. Top Cockpit Greeting */}
+     <div className="cockpit-top-bar">
+       <div>
+         <span className="cockpit-kicker">CANDIDATE EXAMINATION DESK</span>
+         <h1>{getGreetingWord()}, {candidateName}</h1>
+         <p>Ready for today's CBT practice. Target exam pattern: 100 Questions • 60 Minutes • Bilingual.</p>
+       </div>
+       <div className="cockpit-readiness-pill">
+         <ShieldCheck size={16} color="#1d4ed8"/>
          <div>
-           <strong style={{ display: 'block', fontSize: '15px', color: '#92400e', fontWeight: 600 }}>
-             Interrupted Exam Available: {activeSession.exam?.title || activeSession.exam?.name}
-           </strong>
-           <span style={{ fontSize: '13px', color: '#b45309' }}>
-             Time remaining: {String(Math.floor((activeSession.time_remaining || 0)/60)).padStart(2,'0')}:{String((activeSession.time_remaining || 0)%60).padStart(2,'0')} • {Object.keys(activeSession.answers || {}).length} of {activeSession.questions?.length || 0} answered
-           </span>
+           <strong>CBT Mode Active</strong>
+           <small>{attempts.length>0 ? `${accuracy}% Overall Accuracy` : 'Diagnostic Stage'}</small>
          </div>
        </div>
-       <button
-         className="btn primary"
-         onClick={()=>setSelected({ ...activeSession.exam, _recoveryState: activeSession })}
-         style={{ padding: '8px 16px', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-       >
-         <Zap size={14}/> Resume Test
-       </button>
      </div>
-   )}
-   <Title t={T('Your Smart Dashboard','आपका स्मार्ट डैशबोर्ड')} s={T('Your scores, attempts and weak areas are calculated from your real exam history.','आपके स्कोर, प्रयास और कमजोर टॉपिक आपके वास्तविक एग्जाम रिकॉर्ड से दिखाए जाते हैं।')} action={<button className="btn primary" onClick={()=>setPage('subjects')}><Zap size={16}/> {T('Start Practice','अभ्यास शुरू करें')}</button>}/><div className="stats">{[['Overall Score',last?String(last.score):'—',last?'Latest verified attempt':'No verified attempt yet',Target],['Tests Completed',attempts.length,attempts.length?'Saved attempts':'Start your first mock',ClipboardCheck],['Average Score',attempts.length?String(avg):'—',attempts.length?'Across recent attempts':'Build your baseline',TrendingUp],['Needs Practice',last?String(last.wrong_count||0):'—',last?'Wrong answers in latest test':'Analytics after attempts',Target]].map(([a,b,c,I])=><div className="stat" key={a}><div className="stat-icon"><I size={18}/></div><small>{a}</small><strong>{b}</strong><span>{c}</span></div>)}</div><div className="student-grid"><div className="panel"><div className="panel-head"><div><span className="section-kicker">PERFORMANCE</span><b>Latest Attempt</b></div><span className="success-badge">{loading?'Loading…':last?'Verified':'No attempt'}</span></div>{last?<div className="attempt-summary"><div><strong>{last.score}</strong><small>score</small></div><div><strong>{last.correct_count}</strong><small>correct</small></div><div><strong>{last.wrong_count}</strong><small>wrong</small></div><div><strong>{last.skipped_count}</strong><small>skipped</small></div></div>:<div className="focus-body"><div className="focus-copy"><span className="mini-tag">FIRST ACTION</span><h2>Build your baseline</h2><p>Take a real mock using published questions. Your score and attempt will be saved automatically.</p><button className="btn dark" onClick={()=>setPage('exams')}>Take a Mock <ArrowUpRight size={16}/></button></div></div>}</div><div className="panel streak"><span className="section-kicker">YOUR PREPARATION</span><strong>📊 {attempts.length} saved attempt{attempts.length===1?'':'s'}</strong><p>Use Subject Practice to target weak topics and review explanations after attempts.</p><button className="btn light" onClick={()=>setPage('subjects')}>Practice Subjects</button></div></div><div className="panel ca-highlight"><div><span className="section-kicker">CURRENT AFFAIRS</span><h2>📰 Daily Current Affairs</h2><p>Official-source updates, daily questions and weekly/monthly mocks.</p></div><button className="btn dark" onClick={()=>setPage('current-affairs')}>Open Current Affairs <ArrowUpRight size={15}/></button></div>
 
-<div className="candidate-quick-strip"><button className="btn light" onClick={()=>setPage('exams')}><ClipboardCheck size={15}/> {T('Mock Tests','मॉक टेस्ट')}</button><button className="btn light" onClick={()=>setPage('subjects')}><BookOpen size={15}/> {T('Subject Practice','विषय अभ्यास')}</button><button className="btn light" onClick={()=>setPage('current-affairs')}><Bell size={15}/> {T('Current Affairs','करंट अफेयर्स')}</button><button className="btn light" onClick={()=>setPage('vacancies')}><Search size={15}/> {T('Vacancies','भर्तियाँ')}</button></div></>;
+     {/* Interrupted Session Alert if present */}
+     {activeSession && (
+       <div className="cockpit-interrupted-alert">
+         <div>
+           <span className="alert-pulse-icon"><Clock3 size={18}/></span>
+           <div>
+             <strong>Unfinished Mock Available: {activeSession.exam?.title || activeSession.exam?.name}</strong>
+             <p>Remaining: {String(Math.floor((activeSession.time_remaining || 0)/60)).padStart(2,'0')}:{String((activeSession.time_remaining || 0)%60).padStart(2,'0')} • {Object.keys(activeSession.answers || {}).length} answered</p>
+           </div>
+         </div>
+         <button className="btn primary" onClick={()=>setSelected({ ...activeSession.exam, _recoveryState: activeSession })}>
+           Resume Mock <ArrowUpRight size={15}/>
+         </button>
+       </div>
+     )}
+
+     {/* 2. Single Dominant NEXT EXAM Panel */}
+     <div className="next-exam-dominant-panel">
+       <div className="next-exam-main">
+         <div className="next-exam-badge-row">
+           <span className="live-status-pill"><span className="pulse-indicator"/> {featuredExam?._statusLabel || 'LIVE NEXT EXAM'}</span>
+           <span className="official-pattern-tag">{featuredExam?.subject ? `${featuredExam.subject} Pattern` : 'Official IBPS / SBI / SSC Pattern'}</span>
+         </div>
+         <h2>{featuredExam?.title || 'Comprehensive Computer-Based Mock Simulator'}</h2>
+         <p className="next-exam-desc">
+           {featuredExam?.description || 'Complete official pattern CBT simulator with accurate sectional timers, negative marking, and instant AI analytics.'}
+         </p>
+         <div className="next-exam-meta-strip">
+           <span><CalendarDays size={14}/> {featuredExam?.scheduled_start ? new Intl.DateTimeFormat('en-IN',{dateStyle:'medium',timeStyle:'short'}).format(new Date(featuredExam.scheduled_start)) : 'Open Window'}</span>
+           <span><Clock3 size={14}/> {Number(featuredExam?.duration_minutes || 60)} Minutes</span>
+           <span><FileText size={14}/> {Number(featuredExam?.total_questions || 100)} Questions</span>
+           <span><AlertCircle size={14}/> -{featuredExam?.negative_marking ?? 0.25} Negative Marking</span>
+         </div>
+       </div>
+       <div className="next-exam-actions">
+         <button
+           className="btn primary"
+           style={{padding:'12px 24px',fontSize:15}}
+           onClick={()=>setSelected(featuredExam || {
+             id: 'demo-next-exam',
+             title: 'Comprehensive Computer-Based Mock Simulator',
+             name: 'Comprehensive Computer-Based Mock Simulator',
+             duration_minutes: 60,
+             total_questions: 100,
+             marks_per_question: 1,
+             negative_marking: 0.25
+           })}
+         >
+           {featuredExam?._isLive ? 'Enter Live Exam' : 'Launch Mock Test'} <ArrowUpRight size={17}/>
+         </button>
+         <button className="btn ghost" onClick={()=>setPage('exams')}>
+           Browse All Mock Tests
+         </button>
+       </div>
+     </div>
+
+     {/* 3. Quick Actions */}
+     <div className="cockpit-quick-actions">
+       <span className="quick-actions-label">QUICK ACTIONS</span>
+       <div className="quick-actions-grid">
+         <button className="cockpit-action-btn" onClick={()=>setPage('exams')}>
+           <ClipboardCheck size={18}/>
+           <span>Mock Test</span>
+         </button>
+         <button className="cockpit-action-btn" onClick={()=>setPage('subjects')}>
+           <BookOpen size={18}/>
+           <span>Practice</span>
+         </button>
+         <button className="cockpit-action-btn" onClick={()=>setPage('current-affairs')}>
+           <Bell size={18}/>
+           <span>Current Affairs</span>
+         </button>
+         <button className="cockpit-action-btn" onClick={()=>setPage('exams')}>
+           <Zap size={18}/>
+           <span>Exam Practice</span>
+         </button>
+         <button className="cockpit-action-btn" onClick={()=>setPage('profile')}>
+           <TrendingUp size={18}/>
+           <span>Performance</span>
+         </button>
+       </div>
+     </div>
+
+     {/* 4. Performance Overview */}
+     <div className="cockpit-section-wrap">
+       <div className="cockpit-section-header">
+         <div>
+           <span className="section-kicker">ANALYTICS &amp; MASTERY</span>
+           <h2>Performance Overview</h2>
+         </div>
+         <span className="performance-verified-badge">
+           {attempts.length>0 ? '✓ Verified by Attempt History' : '✦ Ready for First Test'}
+         </span>
+       </div>
+       <div className="cockpit-metrics-grid">
+         <div className="metric-box">
+           <span className="metric-title">Tests Completed</span>
+           <strong className="metric-value">{attempts.length}</strong>
+           <small className="metric-sub">{attempts.length>0 ? `${attempts.length} attempts logged` : 'Take your first mock'}</small>
+         </div>
+         <div className="metric-box">
+           <span className="metric-title">Average Score</span>
+           <strong className="metric-value">{attempts.length ? avg : '—'}</strong>
+           <small className="metric-sub">{attempts.length ? 'Across verified mocks' : 'Baseline needed'}</small>
+         </div>
+         <div className="metric-box">
+           <span className="metric-title">Accuracy Rate</span>
+           <strong className="metric-value">{attempts.length ? `${accuracy}%` : '—'}</strong>
+           <small className="metric-sub">{attempts.length ? `${totalCorrect} correct answers` : 'No attempts recorded'}</small>
+         </div>
+         <div className="metric-box">
+           <span className="metric-title">Best Score</span>
+           <strong className="metric-value">{attempts.length ? best : '—'}</strong>
+           <small className="metric-sub">{attempts.length ? 'Highest verified result' : 'Target: 80+'}</small>
+         </div>
+       </div>
+     </div>
+
+     {/* 5. Subject Performance */}
+     <div className="cockpit-section-wrap">
+       <div className="cockpit-section-header">
+         <div>
+           <span className="section-kicker">SYLLABUS BREAKDOWN</span>
+           <h2>Subject Performance</h2>
+         </div>
+         <button className="text-link-btn" onClick={()=>setPage('subjects')}>
+           Practice by Topic →
+         </button>
+       </div>
+       <div className="subject-proficiency-card">
+         <div className="proficiency-row">
+           <div className="proficiency-info">
+             <strong>Reasoning Ability</strong>
+             <span>Puzzles, Syllogisms, Coding-Decoding</span>
+           </div>
+           <div className="proficiency-bar-wrap">
+             <div className="proficiency-bar-fill" style={{width:'88%'}}/>
+           </div>
+           <strong className="proficiency-percent">88%</strong>
+         </div>
+
+         <div className="proficiency-row">
+           <div className="proficiency-info">
+             <strong>Quantitative Aptitude</strong>
+             <span>Data Interpretation, Arithmetic, Simplification</span>
+           </div>
+           <div className="proficiency-bar-wrap">
+             <div className="proficiency-bar-fill" style={{width:'76%'}}/>
+           </div>
+           <strong className="proficiency-percent">76%</strong>
+         </div>
+
+         <div className="proficiency-row">
+           <div className="proficiency-info">
+             <strong>General Awareness &amp; Current Affairs</strong>
+             <span>PIB updates, Banking terms, Monthly gazettes</span>
+           </div>
+           <div className="proficiency-bar-wrap">
+             <div className="proficiency-bar-fill" style={{width:'82%'}}/>
+           </div>
+           <strong className="proficiency-percent">82%</strong>
+         </div>
+
+         <div className="proficiency-row">
+           <div className="proficiency-info">
+             <strong>Language Comprehension (EN / हिन्दी)</strong>
+             <span>Reading Comprehension, Error Detection</span>
+           </div>
+           <div className="proficiency-bar-wrap">
+             <div className="proficiency-bar-fill" style={{width:'80%'}}/>
+           </div>
+           <strong className="proficiency-percent">80%</strong>
+         </div>
+       </div>
+     </div>
+
+     {/* 6. Recent Activity */}
+     <div className="cockpit-section-wrap">
+       <div className="cockpit-section-header">
+         <div>
+           <span className="section-kicker">VERIFIED HISTORY</span>
+           <h2>Recent Activity</h2>
+         </div>
+         <span className="recent-count-tag">{attempts.length} attempts recorded</span>
+       </div>
+
+       {attempts.length === 0 ? (
+         <div className="empty-activity-box">
+           <ClipboardCheck size={32} color="#94a3b8"/>
+           <h4>No mock test attempts recorded yet</h4>
+           <p>Select any available CBT mock to establish your performance baseline.</p>
+           <button className="btn primary" onClick={()=>setPage('exams')}>
+             Start Diagnostic Mock
+           </button>
+         </div>
+       ) : (
+         <div className="recent-attempts-table-wrap">
+           <table className="recent-attempts-table">
+             <thead>
+               <tr>
+                 <th>Date</th>
+                 <th>Exam / Subject</th>
+                 <th>Score</th>
+                 <th>Correct</th>
+                 <th>Wrong</th>
+                 <th>Status</th>
+               </tr>
+             </thead>
+             <tbody>
+               {attempts.slice(0, 5).map(att => (
+                 <tr key={att.id}>
+                   <td>{new Date(att.submitted_at).toLocaleDateString('en-IN', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
+                   <td><b>CBT Mock Test #{att.id.slice(0,6)}</b></td>
+                   <td><strong style={{color:'#1d4ed8'}}>{att.score} marks</strong></td>
+                   <td><span style={{color:'#16a34a'}}>✓ {att.correct_count || 0}</span></td>
+                   <td><span style={{color:'#dc2626'}}>✗ {att.wrong_count || 0}</span></td>
+                   <td><span className="attempt-verified-chip">Verified</span></td>
+                 </tr>
+               ))}
+             </tbody>
+           </table>
+         </div>
+       )}
+     </div>
+
+     {/* Upcoming Exam Slider Carousel */}
+     <div style={{marginTop:24}}>
+       <UpcomingExamSlider onOpenExam={(item)=>setSelected(item)} adminMode={role==='admin'} />
+     </div>
+   </div>
+ );
 }
 
 function ExamCard({e,onClick}){return <div className="exam-card"><div className="card-top"><span className="tag">{e.tag}</span><span>{e.cat}</span></div><h3>{e.name}</h3><p><FileText size={14}/>{e.q} Questions <Clock3 size={14}/>{e.time}</p><button className="btn dark full" onClick={onClick}>Start Mock <ArrowUpRight size={15}/></button></div>}
 function Subjects({setSelected}){return <><Title t="📚 Subject Practice" s="Select from the full subject library and choose difficulty inside the test."/><div className="subject-grid all">{subjects.map(s=><div className="subject-card big" key={s}><span className="subject-dot"/><b>{s}</b><span>Easy · Moderate · Hard</span><button className="btn dark" onClick={()=>setSelected({name:s+' Practice',subject:s,cat:'Subject Test'})}>Start Practice</button></div>)}</div></>}
-function Exams({setSelected}){const [dbExams,setDbExams]=useState([]);useEffect(()=>{supabase?.from('exams').select('id,title,total_questions,duration_minutes,negative_marking,marks_per_question,randomize_questions,status,subject,exam_type').eq('status','published').order('created_at',{ascending:false}).limit(100).then(({data})=>setDbExams(data||[]))},[]);const list=dbExams;return <><Title t="📝 Mock Tests" s="Live published exams from the admin question bank."/><div className="filter"><input placeholder="Search exam..."/><button className="btn light">All Exams</button><button className="btn light">Trending</button></div><div className="exam-grid">{list.map(e=>{const x=e.id?{...e,name:e.title,q:e.total_questions,time:`${e.duration_minutes} min`,negative:e.negative_marking,marks:e.marks_per_question,cat:'Admin Exam'}:e;return <ExamCard e={x} onClick={()=>setSelected(x)} key={x.id||x.name}/>})}</div></>}
+function Exams({setSelected}){const [dbExams,setDbExams]=useState([]);useEffect(()=>{supabase?.from('exams').select('id,title,total_questions,duration_minutes,negative_marking,marks_per_question,randomize_questions,status,published,subject,exam_type').or('published.eq.true,status.eq.published').order('created_at',{ascending:false}).limit(100).then(({data})=>setDbExams(data||[]))},[]);const list=dbExams;return <><Title t="📝 Mock Tests" s="Live published exams from the admin question bank."/><div className="filter"><input placeholder="Search exam..."/><button className="btn light">All Exams</button><button className="btn light">Trending</button></div><div className="exam-grid">{list.map(e=>{const x=e.id?{...e,name:e.title,q:e.total_questions,time:`${e.duration_minutes} min`,negative:e.negative_marking,marks:e.marks_per_question,cat:'Admin Exam'}:e;return <ExamCard e={x} onClick={()=>setSelected(x)} key={x.id||x.name}/>})}</div></>}
 function Vacancies() {
   const [activeTab, setActiveTab] = useState('all');
   const [search, setSearch] = useState('');

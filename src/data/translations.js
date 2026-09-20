@@ -48,8 +48,8 @@ export const TRANSLATIONS = {
     countdownSub: 'Target MPESB Group-3 Sub Engineer (Civil / Mech / Elec) CBT Mock Tests & Official Syllabus',
     days: 'Days',
     hours: 'Hours',
-    mins: 'Mins',
-    secs: 'Secs',
+    mins: 'Minutes',
+    secs: 'Seconds',
     startPracticingNow: 'Start Practicing Now',
 
     // Candidate Dashboard
@@ -190,7 +190,7 @@ export const TRANSLATIONS = {
     candidateAlertsSub: 'Send & schedule',
 
     // Footer
-    poweredBy: 'Powered by SKTech All Right Reserved'
+    poweredBy: 'Powered by SKTech All Rights Reserved'
   },
 
   hi: {

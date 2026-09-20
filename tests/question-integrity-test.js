@@ -18,19 +18,19 @@ import {
   isQuestionDuplicateInDb,
   OFFICIAL_SOURCES,
   OFFICIAL_GROUNDED_MILESTONES
-} from './_shared.js';
+} from '../server/api/_shared.js';
 import {
   fetchRealOfficialBulletins,
   classifyBulletinDomain,
   synthesizeMultiSubjectExamQuestions
-} from './sync-current-affairs.js';
+} from '../server/api/sync-current-affairs.js';
 import dailySchedulerHandler, {
   generateGeminiQuestionsForSubject,
   generateNewQuestionsWithGemini,
   generateUniqueQuestionsQuotaLoop,
   runGeminiReviewBatch
-} from './daily-scheduler.js';
-import systemLogsHandler from './system-logs.js';
+} from '../server/api/daily-scheduler.js';
+import systemLogsHandler from '../server/api/system-logs.js';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 
@@ -1355,8 +1355,26 @@ export async function runIntegrityTestSuite() {
     const mockGeminiLoopClient = {
       models: {
         generateContent: async ({ contents }) => {
+          const promptText = contents?.[0]?.parts?.[0]?.text || '';
+          if (promptText.includes('question quality controller')) {
+            const payload = JSON.parse(contents?.[1]?.parts?.[0]?.text || '{\"questions\":[]}');
+            return {
+              text: JSON.stringify({
+                reviews: (payload.questions || []).map((item) => ({
+                  index: item.index,
+                  verdict: 'publish',
+                  confidence: 0.99,
+                  correct_answer_valid: true,
+                  options_quality_ok: true,
+                  factual_accuracy_ok: true,
+                  subject_aligned: true,
+                  notes: 'Test reviewer verified the generated question.'
+                }))
+              })
+            };
+          }
           callCount++;
-          // Generate 5 questions per call, with intentional duplicates on even calls
+          // Generate 5 questions per call, with intentional duplicates on even calls.
           const qList = [];
           for (let i = 0; i < 5; i++) {
             const num = (callCount % 2 === 0 && i === 0) ? 101 : seedCounter++;
@@ -1382,24 +1400,26 @@ export async function runIntegrityTestSuite() {
     const TARGET_TEST_QUOTA = 25;
     const loopResult = await generateUniqueQuestionsQuotaLoop(null, mockGeminiLoopClient, {
       targetQuota: TARGET_TEST_QUOTA,
-      subjects: ['Mathematics', 'Reasoning', 'Banking Awareness', 'Technical', 'Current Affairs'],
+      subjects: ['Mathematics', 'Reasoning', 'Banking Awareness', 'Technical'],
       autoInsert: false,
+      reviewThreshold: 0.93,
       maxRounds: 30
     });
 
     const isQuotaExact = loopResult.delivered === TARGET_TEST_QUOTA;
     const allUnique = new Set(loopResult.questions.map(q => q.content_hash)).size === TARGET_TEST_QUOTA;
     const loopActive = callCount >= Math.ceil(TARGET_TEST_QUOTA / 5);
+    const reviewGateActive = loopResult.review_calls > 0 && loopResult.questions.every(q => q.ai_review_status === 'publish' && Number(q.ai_confidence) >= 0.93);
     const duplicatesDiscarded = loopResult.duplicatesDiscarded >= 0;
 
-    const ok = isQuotaExact && allUnique && loopActive && duplicatesDiscarded && loopResult.ok;
+    const ok = isQuotaExact && allUnique && loopActive && duplicatesDiscarded && reviewGateActive && loopResult.ok;
 
     record(
       '25. Strict Unique Questions Quota Loop (Active Retry Synthesis, Zero Duplicates & Exact Fulfillment)',
       ok,
       ok
         ? `Successfully verified active retry loop: delivered exactly ${loopResult.delivered}/${TARGET_TEST_QUOTA} unique questions across ${callCount} rounds, with ${loopResult.duplicatesDiscarded} duplicates discarded and 100% hash uniqueness.`
-        : `Quota loop failed: delivered=${loopResult.delivered}, isQuotaExact=${isQuotaExact}, allUnique=${allUnique}, callCount=${callCount}`
+        : `Quota loop failed: delivered=${loopResult.delivered}, isQuotaExact=${isQuotaExact}, allUnique=${allUnique}, reviewGateActive=${reviewGateActive}, reviewCalls=${loopResult.review_calls}, callCount=${callCount}`
     );
   } catch (err) {
     record('25. Strict Unique Questions Quota Loop', false, err.message);

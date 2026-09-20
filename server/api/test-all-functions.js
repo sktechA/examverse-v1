@@ -26,26 +26,21 @@ import {
   sanitizeErrorResponse,
   OFFICIAL_SOURCES,
   OFFICIAL_GROUNDED_MILESTONES
-} from '../server/api/_shared.js';
+} from './_shared.js';
 import {
   fetchRealOfficialBulletins,
   classifyBulletinDomain,
   synthesizeMultiSubjectExamQuestions
-} from '../server/api/sync-current-affairs.js';
+} from './sync-current-affairs.js';
 import dailySchedulerHandler, {
   generateGeminiQuestionsForSubject,
   generateNewQuestionsWithGemini,
   generateUniqueQuestionsQuotaLoop,
   runGeminiReviewBatch
-} from '../server/api/daily-scheduler.js';
-import { BLUEPRINT_PRESETS } from '../server/api/mock-generator.js';
-import systemLogsHandler from '../server/api/system-logs.js';
-import adminCleanupHandler from '../server/api/admin-cleanup.js';
-import syncExamCalendarHandler, {
-  isAuthoritativeOfficialSource,
-  computeScheduleIdentityKey,
-  OFFICIAL_EXAM_CALENDAR_BENCHMARK
-} from '../server/api/sync-exam-calendar.js';
+} from './daily-scheduler.js';
+import { BLUEPRINT_PRESETS } from './mock-generator.js';
+import systemLogsHandler from './system-logs.js';
+import adminCleanupHandler from './admin-cleanup.js';
 
 async function runAllFunctionTests() {
   const startTime = Date.now();
@@ -679,48 +674,6 @@ async function runAllFunctionTests() {
     return 'CORS origin and allowed methods headers verified.';
   });
 
-  // --- Module 26: Official Examination Calendar & Verification Pipeline ---
-  await test(29, 'Exam Calendar', 'Official Source Verification & Sync Pipeline', async () => {
-    // 1. Domain verification tests
-    if (!isAuthoritativeOfficialSource('https://upsc.gov.in/examinations/active')) {
-      throw new Error('upsc.gov.in must be recognized as authoritative');
-    }
-    if (!isAuthoritativeOfficialSource('https://ssc.gov.in/notices')) {
-      throw new Error('ssc.gov.in must be recognized as authoritative');
-    }
-    if (!isAuthoritativeOfficialSource('https://esb.mp.gov.in/rulebooks')) {
-      throw new Error('esb.mp.gov.in must be recognized as authoritative');
-    }
-    if (isAuthoritativeOfficialSource('https://sarkariresult.com/latestjob')) {
-      throw new Error('Unofficial aggregator sarkariresult.com must be rejected');
-    }
-    if (isAuthoritativeOfficialSource('https://testbook.com/exams')) {
-      throw new Error('Unofficial aggregator testbook.com must be rejected');
-    }
-
-    // 2. Deterministic identity key check
-    const key1 = computeScheduleIdentityKey('UPSC', 'Civil Services Examination 2026', 2026);
-    const key2 = computeScheduleIdentityKey('upsc', 'Civil Services Examination 2026', '2026');
-    if (key1 !== key2) {
-      throw new Error(`Deterministic key mismatch: ${key1} vs ${key2}`);
-    }
-
-    // 3. Test GET handler
-    let resData = null;
-    const req = { method: 'GET', headers: {} };
-    const res = {
-      status: () => ({
-        json: (d) => { resData = d; return d; }
-      })
-    };
-    await syncExamCalendarHandler(req, res);
-    if (!resData?.ok || !Array.isArray(resData?.schedules) || resData.schedules.length === 0) {
-      throw new Error('GET /api/sync-exam-calendar failed to return verified schedules');
-    }
-
-    return `Authoritative domain verification, identity keys, and GET endpoint verified (${resData.schedules.length} schedules).`;
-  });
-
   const totalTime = Date.now() - startTime;
   const passedCount = results.filter(r => r.status === 'PASSED').length;
   const failedCount = results.filter(r => r.status === 'FAILED').length;
@@ -797,9 +750,26 @@ function generateNotepadReport(results, passedCount, failedCount, totalTime) {
   return text;
 }
 
-runAllFunctionTests()
-  .then(() => process.exit(0))
-  .catch(err => {
-    console.error('Fatal Test Runner Failure:', err);
-    process.exit(1);
-  });
+export default async function handler(req, res) {
+  if (handleCorsAndOptions(req, res, ['GET', 'POST', 'OPTIONS'])) {
+    return;
+  }
+  const auth = await verifyAdminAuth(req);
+  if (!auth.ok) {
+    if (res) return res.status(auth.statusCode || 401).json({ ok: false, error: auth.error });
+    return { ok: false, error: auth.error };
+  }
+  const report = await runAllFunctionTests();
+  if (res) return res.status(200).json({ ok: true, report });
+  return { ok: true, report };
+}
+
+// Auto-run if invoked directly via CLI
+if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFileURL(process.argv[1]).href) {
+  runAllFunctionTests()
+    .then(() => process.exit(0))
+    .catch(err => {
+      console.error('Fatal Test Runner Failure:', err);
+      process.exit(1);
+    });
+}

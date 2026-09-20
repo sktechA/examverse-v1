@@ -209,15 +209,21 @@ async function handler(req, res) {
         }
       }
 
-      // TARGET 3: UNWANTED / QUARANTINED QUESTIONS
-      else if (target === 'unwanted_questions') {
+      // TARGET 3: UNWANTED / QUARANTINED / BROKEN REVIEW QUESTIONS
+      else if (target === 'unwanted_questions' || target === 'invalid_review_questions' || action === 'purge_invalid_exceptions') {
+        const clientBrokenIds = Array.isArray(body.broken_ids) ? body.broken_ids : [];
         // Fetch questions with status 'needs_correction' or 'pending_review'
         const { data: badQuestions } = await sb
           .from('questions')
-          .select('id')
+          .select('id, question, option_a, option_b, option_c, option_d, correct_answer')
           .in('status', ['needs_correction', 'pending_review']);
 
-        const badIds = (badQuestions || []).map(q => q.id);
+        const badIdsSet = new Set(clientBrokenIds);
+        for (const q of badQuestions || []) {
+          badIdsSet.add(q.id);
+        }
+
+        const badIds = Array.from(badIdsSet);
         if (badIds.length > 0) {
           // 1. Remove from exam_questions mappings
           await sb.from('exam_questions').delete().in('question_id', badIds);
@@ -226,7 +232,7 @@ async function handler(req, res) {
           if (delErr) throw delErr;
           deletedCount = badIds.length;
         }
-        summaryMessage = `Permanently deleted ${deletedCount} quarantined / unapproved questions from question bank.`;
+        summaryMessage = `Permanently purged and deleted ${deletedCount} invalid/broken review exceptions and quarantined questions from question bank.`;
       }
 
       // TARGET 4: ALL QUESTIONS (FULL QUESTION BANK RESET)

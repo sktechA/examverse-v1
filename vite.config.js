@@ -12,6 +12,9 @@ import questionIntegrityHandler from './server/api/question-integrity-test.js';
 import bilingualTranslateHandler from './server/api/bilingual-translate.js';
 import systemLogsHandler from './server/api/system-logs.js';
 import adminCleanupHandler from './server/api/admin-cleanup.js';
+import geminiValidateHandler from './server/api/gemini-validate.js';
+import testAllFunctionsHandler from './server/api/test-all-functions.js';
+import syncExamCalendarHandler from './server/api/sync-exam-calendar.js';
 
 const apiRoutes = {
   '/api/admin-create-user': adminCreateUserHandler,
@@ -20,12 +23,15 @@ const apiRoutes = {
   '/api/ai-review': aiReviewHandler,
   '/api/mock-generator': mockGeneratorHandler,
   '/api/sync-current-affairs': syncCurrentAffairsHandler,
+  '/api/sync-exam-calendar': syncExamCalendarHandler,
   '/api/daily-scheduler': dailySchedulerHandler,
   '/api/automation-settings': automationSettingsHandler,
   '/api/question-integrity-test': questionIntegrityHandler,
   '/api/bilingual-translate': bilingualTranslateHandler,
   '/api/system-logs': systemLogsHandler,
-  '/api/admin-cleanup': adminCleanupHandler
+  '/api/admin-cleanup': adminCleanupHandler,
+  '/api/gemini-validate': geminiValidateHandler,
+  '/api/test-all-functions': testAllFunctionsHandler
 };
 
 function apiMiddlewarePlugin() {

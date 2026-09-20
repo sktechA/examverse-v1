@@ -9,6 +9,9 @@ import mockGeneratorHandler from '../server/api/mock-generator.js';
 import questionIntegrityHandler from '../server/api/question-integrity-test.js';
 import syncCurrentAffairsHandler from '../server/api/sync-current-affairs.js';
 import systemLogsHandler from '../server/api/system-logs.js';
+import geminiValidateHandler from '../server/api/gemini-validate.js';
+import testAllFunctionsHandler from '../server/api/test-all-functions.js';
+import syncExamCalendarHandler from '../server/api/sync-exam-calendar.js';
 
 const routes = new Map([
   ['admin-create-user', adminCreateUserHandler],
@@ -22,7 +25,10 @@ const routes = new Map([
   ['mock-generator', mockGeneratorHandler],
   ['question-integrity-test', questionIntegrityHandler],
   ['sync-current-affairs', syncCurrentAffairsHandler],
-  ['system-logs', systemLogsHandler]
+  ['sync-exam-calendar', syncExamCalendarHandler],
+  ['system-logs', systemLogsHandler],
+  ['gemini-validate', geminiValidateHandler],
+  ['test-all-functions', testAllFunctionsHandler]
 ]);
 
 function getRouteName(req) {

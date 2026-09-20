@@ -411,7 +411,7 @@ function Landing({role,setRole,open,setOpen,login}){
       </main>
 
       <footer>
-        © 2026 SKTech Exam Portal · Powered by <b>SKTech All Rights Reserved</b>
+        © 2026 SKTech Exam Portal · © 2026 SKTech Exam Portal. <b>All Rights Reserved.</b>
       </footer>
 
       {open&&<Login role={role} close={()=>setOpen(false)} login={login} initialSignup={initialSignup}/>}
@@ -891,7 +891,7 @@ function Shell({role,page,setPage,logout,selected,setSelected,session}){
             />
           )}
         </div>
-        <footer className="dash-footer">Powered by <b>SKTech All Rights Reserved</b></footer>
+        <footer className="dash-footer">© 2026 SKTech Exam Portal. <b>All Rights Reserved.</b></footer>
       </div>
     </div>
   );
@@ -3302,34 +3302,39 @@ function Notifications() {
 class ErrorBoundary extends React.Component {
   constructor(props){
     super(props);
-    this.state={hasError:false,error:null};
+    this.state={hasError:false,error:null,retryKey:0};
   }
   static getDerivedStateFromError(error){
     return {hasError:true,error};
   }
   componentDidCatch(error,errorInfo){
-    console.error('Portal component error caught:', error, errorInfo);
+    console.error('Portal render error caught:', error, errorInfo);
     if(typeof logEvent==='function'){
-      logEvent('error',error?.message||'Portal render crash',{source:'error-boundary',data:{componentStack:errorInfo?.componentStack}}).catch(()=>{});
+      logEvent('error',error?.message||'Portal render crash',{source:'error-boundary',data:{stack:error?.stack||'',componentStack:errorInfo?.componentStack||''}}).catch(()=>{});
     }
   }
+  retryRender=()=>{
+    this.setState(state=>({hasError:false,error:null,retryKey:state.retryKey+1}));
+  };
   render(){
     if(this.state.hasError){
+      const message=this.state.error?.message||'The portal could not render this screen.';
       return (
         <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'24px',textAlign:'center',background:'#f5f7fb',fontFamily:'Inter,ui-sans-serif,system-ui,sans-serif'}}>
-          <div style={{maxWidth:420,width:'100%',background:'#fff',border:'1px solid #e2e8f0',borderRadius:16,padding:'32px 24px',boxShadow:'0 10px 25px rgba(0,0,0,0.05)'}}>
+          <div style={{maxWidth:460,width:'100%',background:'#fff',border:'1px solid #e2e8f0',borderRadius:16,padding:'32px 24px',boxShadow:'0 10px 25px rgba(0,0,0,0.05)'}}>
             <div style={{width:44,height:44,borderRadius:12,background:'#fee2e2',color:'#ef4444',display:'grid',placeItems:'center',margin:'0 auto 16px',fontWeight:'bold',fontSize:20}}>!</div>
-            <h2 style={{fontSize:18,margin:'0 0 8px',fontWeight:700}}>Portal Display Restored</h2>
-            <p style={{fontSize:13,color:'#64748b',margin:'0 0 20px',lineHeight:1.5}}>The portal encountered a transient viewport issue. Please refresh to continue.</p>
+            <h2 style={{fontSize:18,margin:'0 0 8px',fontWeight:700}}>Portal could not load this screen</h2>
+            <p style={{fontSize:13,color:'#64748b',margin:'0 0 12px',lineHeight:1.5}}>A temporary rendering error occurred. Try Again will remount the portal without clearing your login session.</p>
+            <div style={{fontSize:11,color:'#94a3b8',background:'#f8fafc',borderRadius:8,padding:'8px 10px',marginBottom:20,wordBreak:'break-word'}}>Error: {message.slice(0,240)}</div>
             <div style={{display:'flex',gap:10}}>
-              <button className="btn primary full" onClick={()=>window.location.reload()}>Refresh</button>
-              <button className="btn light full" onClick={()=>this.setState({hasError:false})}>Try Again</button>
+              <button className="btn primary full" onClick={this.retryRender}>Try Again</button>
+              <button className="btn light full" onClick={()=>window.location.reload()}>Refresh</button>
             </div>
           </div>
         </div>
       );
     }
-    return this.props.children;
+    return <React.Fragment key={this.state.retryKey}>{this.props.children}</React.Fragment>;
   }
 }
 

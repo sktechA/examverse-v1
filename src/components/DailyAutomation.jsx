@@ -373,7 +373,7 @@ export default function DailyAutomation({ supabase, session }) {
         if (!res.ok && res.status !== 207) throw new Error(`${subject}: ${data.error || 'generation failed'}`);
         results.push(`${subject} ${data.inserted || 0}/100`);
         if ((data.inserted || 0) < 100) {
-          const detail = data.insert_errors?.length ? ` DB error: ${data.insert_errors[0]}` : (data.error || 'Generation/rejection issue');
+          const detail = data.insert_errors?.length ? ` DB error: ${data.insert_errors[0]}` : (data.hint || data.generation_error || data.error || `Generated ${data.generated || 0}, rejected ${data.rejected || 0}, rounds ${data.rounds || 0}`);
           setMsg(`${subject} completed ${data.inserted || 0}/100. ${detail} Pipeline stopped safely; fix/retry this subject before moving on.`);
           break;
         }

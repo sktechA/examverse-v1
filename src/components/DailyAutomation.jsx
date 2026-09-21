@@ -1101,10 +1101,9 @@ export default function DailyAutomation({ supabase, session }) {
             )}
           </div>
         </div>
-      </div>
       </div>)}
 
-      {/* Safety Confirmation Dialog Modal */
+      {/* Safety Confirmation Dialog Modal */}
       {cleanupConfirmOpen && (
         <div
           style={{

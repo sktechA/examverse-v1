@@ -1,6 +1,7 @@
 import adminCleanupHandler from '../server/api/admin-cleanup.js';
 import adminCreateUserHandler from '../server/api/admin-create-user.js';
 import aiRepairHandler from '../server/api/ai-repair.js';
+import aiChatHandler from '../server/api/ai-chat.js';
 import aiReviewHandler from '../server/api/ai-review.js';
 import automationSettingsHandler from '../server/api/automation-settings.js';
 import bilingualTranslateHandler from '../server/api/bilingual-translate.js';
@@ -18,6 +19,7 @@ const routes = new Map([
   ['admin-manage-user', adminCreateUserHandler],
   ['admin-cleanup', adminCleanupHandler],
   ['ai-repair', aiRepairHandler],
+  ['ai-chat', aiChatHandler],
   ['ai-review', aiReviewHandler],
   ['automation-settings', automationSettingsHandler],
   ['bilingual-translate', bilingualTranslateHandler],

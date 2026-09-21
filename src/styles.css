@@ -4221,3 +4221,19 @@ html[data-theme="dark"] .dash-footer b { color:#94a3b8; }
 }
 html[data-theme="dark"] .captcha-box { background:#0b1324; border-color:#334155; }
 html[data-theme="dark"] .loading-screen { background:#080e1a; color:#94a3b8; }
+
+/* Public footer: centered at the bottom of the landing page without overlapping content. */
+.public-footer {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: auto;
+  padding: 18px 24px 22px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  border-top: 1px solid var(--border-subtle);
+}
+.public-footer b { color: var(--text-secondary); }
+html[data-theme="dark"] .public-footer { border-color: #1e2c47; color: #64748b; }
+html[data-theme="dark"] .public-footer b { color: #94a3b8; }

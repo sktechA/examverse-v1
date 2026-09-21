@@ -67,6 +67,9 @@ export default function DailyAutomation({ supabase, session }) {
   const [testResult, setTestResult] = useState(null);
   const [msg, setMsg] = useState('');
   const [currentTimeKolkata, setCurrentTimeKolkata] = useState('');
+  const [aiChatMessage, setAiChatMessage] = useState('');
+  const [aiChatAnswer, setAiChatAnswer] = useState(null);
+  const [aiChatBusy, setAiChatBusy] = useState(false);
 
   // Permanent Data Deletion & Database Cleanup State
   const [cleanupCounts, setCleanupCounts] = useState(null);
@@ -385,6 +388,25 @@ export default function DailyAutomation({ supabase, session }) {
     } finally {
       setRunningJob(false);
     }
+  };
+
+  const sendAiChat = async () => {
+    if (!aiChatMessage.trim()) return;
+    setAiChatBusy(true);
+    setAiChatAnswer(null);
+    try {
+      const token = (await supabase?.auth?.getSession())?.data?.session?.access_token || '';
+      const res = await fetch('/api/ai-chat', {
+        method:'POST',
+        headers:{'Content-Type':'application/json', Authorization:`Bearer ${token}`},
+        body:JSON.stringify({ message:aiChatMessage.trim() })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'AI did not respond');
+      setAiChatAnswer(data);
+    } catch (e) {
+      setAiChatAnswer({ ok:false, error:e.message });
+    } finally { setAiChatBusy(false); }
   };
 
   const runRegressionTest = async () => {
@@ -1352,6 +1374,34 @@ export default function DailyAutomation({ supabase, session }) {
         </div>
       )}
 
+      {/* AI Diagnostic Chat */}
+      <div className="panel" style={{ marginTop:16 }}>
+        <div className="panel-head">
+          <div>
+            <b><Sparkles size={16} /> AI Diagnostic Chat</b>
+            <small>Ask a simple question to verify that the server-side AI connection is actually responding.</small>
+          </div>
+          <span className="tag">Gemini → OpenAI fallback</span>
+        </div>
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          <input
+            value={aiChatMessage}
+            onChange={e=>setAiChatMessage(e.target.value)}
+            onKeyDown={e=>{ if(e.key==='Enter') sendAiChat(); }}
+            placeholder="Example: Is the AI pipeline connected?"
+            style={{ flex:'1 1 320px', minWidth:220, padding:'10px 12px', border:'1px solid #dce1ea', borderRadius:8 }}
+          />
+          <button className="btn primary" onClick={sendAiChat} disabled={aiChatBusy || !aiChatMessage.trim()}>
+            <Sparkles size={14}/> {aiChatBusy ? 'Testing AI...' : 'Test AI'}
+          </button>
+        </div>
+        {aiChatAnswer && (
+          <div style={{ marginTop:10, padding:12, borderRadius:8, border:'1px solid #e2e8f0', background:aiChatAnswer.ok ? '#f8fafc' : '#fff7ed' }}>
+            {aiChatAnswer.ok ? <><b>Response received</b> · Provider: {aiChatAnswer.provider} · Model: {aiChatAnswer.model} · {aiChatAnswer.latency_ms} ms<div style={{ marginTop:6 }}>{aiChatAnswer.answer}</div></> : <><b>AI test failed</b><div style={{ marginTop:6 }}>{aiChatAnswer.error}</div></>}
+          </div>
+        )}
+      </div>
+
       {/* Execution & System Logs */}
       <div className="panel">
         <div className="panel-head">
@@ -1545,6 +1595,7 @@ export default function DailyAutomation({ supabase, session }) {
                       <th style={{ width: '130px' }}>Source</th>
                       <th style={{ width: '130px' }}>Action</th>
                       <th>Message</th>
+                      <th style={{ width: '240px' }}>AI / Connection Details</th>
                       <th style={{ width: '150px' }}>Timestamp</th>
                     </tr>
                   </thead>
@@ -1577,26 +1628,9 @@ export default function DailyAutomation({ supabase, session }) {
                         </td>
                         <td><span className="tag" style={{ fontSize: '10px' }}>{l.source || 'system'}</span></td>
                         <td><b>{l.action || 'event'}</b></td>
-                        <td>
-                          <div style={{ fontSize: '12px' }}>{l.message}</div>
-                          {l.details && Object.keys(l.details).length > 0 && (
-                            <pre
-                              style={{
-                                marginTop: '4px',
-                                padding: '4px 6px',
-                                background: '#f8fafc',
-                                border: '1px solid #e2e8f0',
-                                borderRadius: '4px',
-                                fontSize: '10px',
-                                color: '#475569',
-                                maxWidth: '100%',
-                                overflowX: 'auto',
-                                whiteSpace: 'pre-wrap'
-                              }}
-                            >
-                              {typeof l.details === 'string' ? l.details : JSON.stringify(l.details, null, 2)}
-                            </pre>
-                          )}
+                        <td><div style={{ fontSize: '12px' }}>{l.message}</div></td>
+                        <td style={{ fontSize: '10px', color: '#475569', whiteSpace: 'pre-wrap' }}>
+                          {l.details ? JSON.stringify(l.details, null, 2) : '—'}
                         </td>
                         <td style={{ fontSize: '11px', color: '#64748b' }}>
                           {l.created_at ? new Date(l.created_at).toLocaleString('en-IN') : '—'}

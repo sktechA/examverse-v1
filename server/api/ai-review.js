@@ -6,7 +6,10 @@ import {
   verifyAdminAuth,
   cleanJsonParse,
   callGeminiWithRetry,
+  callOpenAIJsonWithRetry,
+  getOpenAIConfig,
   getNormalizedGeminiModel,
+  writeAiPipelineLog,
   handleCorsAndOptions,
   sanitizeObject,
   sanitizeString,
@@ -223,7 +226,17 @@ export default async function handler(req, res) {
             exam: q.exam
           }];
 
-          const reviews = await geminiBatchReview(aiInput, geminiClient);
+          let reviews;
+          try {
+            reviews = await geminiBatchReview(aiInput, geminiClient);
+          } catch (geminiErr) {
+            const openai = getOpenAIConfig();
+            if (!openai.enabled) throw geminiErr;
+            await writeAiPipelineLog(sb, { level:'warning', source:'ai-review', action:'gemini-review-fallback', message:'Gemini review failed; OpenAI fallback reviewer was used.', details:{ error:geminiErr?.message || String(geminiErr), status:geminiErr?.status || null, timeout:Boolean(geminiErr?.isTimeout), quota:Boolean(geminiErr?.isQuotaExhausted) }, user_id:user?.id || null });
+            const fallback = await callOpenAIJsonWithRetry(`Return JSON only with key reviews. Review this MCQ and publish only when the answer is clearly correct, four options are distinct and the subject is aligned. Schema: {"reviews":[{"index":0,"verdict":"publish|reject|review","confidence":0.99,"correct_answer_valid":true,"metadata_ok":true,"notes":"..."}]}. Question: ${JSON.stringify(aiInput)}`, { operationName:'OpenAI Question Review Fallback', timeoutMs:15000, maxRetries:2 });
+            const parsed = cleanJsonParse(fallback.text || '{}');
+            reviews = Array.isArray(parsed.reviews) ? parsed.reviews : [];
+          }
           const rv = reviews[0];
 
           if (rv && rv.verdict === 'publish' && Number(rv.confidence) >= 0.93 && rv.correct_answer_valid !== false) {

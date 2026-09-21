@@ -549,6 +549,87 @@ export function getGeminiClient() {
 /**
  * Normalizes user/env model names to official valid Gemini model IDs
  */
+export function getOpenAIConfig() {
+  const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
+  const model = String(process.env.OPENAI_MODEL || 'gpt-5.6-luna').trim();
+  return { apiKey, model, enabled: Boolean(apiKey) };
+}
+
+export async function callOpenAIJsonWithRetry(prompt, options = {}) {
+  const { apiKey, model } = getOpenAIConfig();
+  if (!apiKey) {
+    const err = new Error('OPENAI_API_KEY is not configured on the server.');
+    err.code = 'OPENAI_NOT_CONFIGURED';
+    throw err;
+  }
+  const timeoutMs = options.timeoutMs ?? 20000;
+  const maxRetries = options.maxRetries ?? 2;
+  const operationName = options.operationName || 'OpenAI API call';
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const started = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model,
+          input: prompt,
+          text: { format: { type: 'json_object' } }
+        }),
+        signal: controller.signal
+      });
+      const raw = await response.text();
+      let data = {};
+      try { data = JSON.parse(raw); } catch (_) {}
+      if (!response.ok) {
+        const msg = data?.error?.message || `HTTP ${response.status}`;
+        const err = new Error(msg);
+        err.status = response.status;
+        err.code = data?.error?.code || null;
+        throw err;
+      }
+      const text = data?.output_text || data?.output?.flatMap?.(x => x?.content || [])?.map(x => x?.text || '').join('') || '';
+      if (!text) throw new Error(`${operationName} returned an empty response.`);
+      return { text, provider: 'openai', model, latency_ms: Date.now() - started, attempts: attempt + 1 };
+    } catch (err) {
+      lastError = err?.name === 'AbortError' ? Object.assign(new Error(`${operationName} timed out after ${timeoutMs}ms`), { status: 504, isTimeout: true }) : err;
+      const status = lastError?.status;
+      const transient = status === 429 || status === 500 || status === 502 || status === 503 || status === 504 || lastError?.isTimeout || /timeout|timed out|ECONNRESET|ETIMEDOUT|overloaded|temporarily/i.test(String(lastError?.message || ''));
+      if (!transient || attempt === maxRetries) break;
+      await new Promise(r => setTimeout(r, Math.min(1000 * 2 ** attempt, 4000)));
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  lastError.provider = 'openai';
+  lastError.operationName = operationName;
+  throw lastError;
+}
+
+export async function writeAiPipelineLog(sb, { level='info', source='ai-pipeline', action='ai-event', message='', details={}, user_id=null } = {}) {
+  try {
+    if (!sb) return;
+    await sb.from('system_logs').insert({
+      level: sanitizeString(level, 20),
+      source: sanitizeString(source, 80),
+      action: sanitizeString(action, 80),
+      message: sanitizeString(message, 1000),
+      details: sanitizeObject({
+        timestamp: new Date().toISOString(),
+        ...details
+      }),
+      user_id
+    });
+  } catch (_) {}
+}
+
 export function getNormalizedGeminiModel(rawModel) {
   if (!rawModel) return 'gemini-3.8-flash';
   const clean = String(rawModel).trim().toLowerCase().replace(/\s+/g, '-');

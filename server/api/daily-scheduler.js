@@ -2,6 +2,9 @@ import {
   getSupabaseAdmin,
   getGeminiClient,
   callGeminiWithRetry,
+  callOpenAIJsonWithRetry,
+  getOpenAIConfig,
+  writeAiPipelineLog,
   getNormalizedGeminiModel,
   getKolkataDateString,
   getKolkataTimeString,
@@ -210,7 +213,9 @@ Return JSON in this EXACT schema:
   ]
 }`;
 
-  const response = await callGeminiWithRetry(
+  let response;
+  try {
+    response = await callGeminiWithRetry(
     () => gemini.models.generateContent({
       model: getNormalizedGeminiModel(process.env.GEMINI_REVIEW_MODEL_ID),
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -224,6 +229,13 @@ Return JSON in this EXACT schema:
     }
   );
 
+  } catch (geminiErr) {
+    const openai = getOpenAIConfig();
+    if (!openai.enabled) throw geminiErr;
+    await writeAiPipelineLog(null, { level: 'warning', source: 'ai-pipeline', action: 'gemini-generation-fallback', message: `Gemini generation failed for ${subject}; using OpenAI fallback.`, details: { provider: 'gemini', fallback: 'openai', subject, error: geminiErr?.message || String(geminiErr), status: geminiErr?.status || null } });
+    const fallbackPrompt = `Generate exactly ${count} fresh competitive-exam MCQs for subject "${subject}". Return JSON only with key questions. Each item must contain question, question_hi, option_a, option_b, option_c, option_d, option_a_hi, option_b_hi, option_c_hi, option_d_hi, correct_answer, explanation, explanation_hi, topic, difficulty. Exactly four distinct options, one correct answer A/B/C/D, no filler, no uncertainty. Topics: ${topicList}.`;
+    response = await callOpenAIJsonWithRetry(fallbackPrompt, { operationName: `OpenAI Question Generation (${subject})`, timeoutMs: retryOptions.timeoutMs || 20000, maxRetries: 2 });
+  }
   const parsed = cleanJsonParse(response.text || '{}');
   const rawList = Array.isArray(parsed.questions) ? parsed.questions : (Array.isArray(parsed) ? parsed : []);
   // Automatically detect and replace duplicate or repeating option text with valid, unique alternative distractors
@@ -397,10 +409,11 @@ export default async function handler(req, res) {
         const payload = { ok: false, error: `Unsupported subject: ${requestedSubject}` };
         return res ? res.status(400).json(payload) : payload;
       }
-      if (!isAiActive) {
+      const openaiAvailable = getOpenAIConfig().enabled;
+      if (!isAiActive && !openaiAvailable) {
         const payload = {
           ok: false,
-          error: 'Gemini AI is not active. Enable GEMINI_AI_ENABLED and configure GEMINI_API_KEY on the server.'
+          error: 'No AI provider is configured. Configure GEMINI_API_KEY or OPENAI_API_KEY on the server.'
         };
         return res ? res.status(503).json(payload) : payload;
       }
@@ -963,12 +976,19 @@ async function generateUniqueQuestionsQuotaLoop(sb, gemini, options = {}) {
 
     try {
       generationCalls++;
-      const generatedList = await generateGeminiQuestionsForSubject(
-        gemini,
-        targetSubject,
-        batchNeeded,
-        options.retryOptions || {}
-      );
+      let generatedList;
+      try {
+        if (!gemini) throw Object.assign(new Error('Gemini unavailable'), { code: 'GEMINI_UNAVAILABLE' });
+        generatedList = await generateGeminiQuestionsForSubject(gemini, targetSubject, batchNeeded, options.retryOptions || {});
+      } catch (generationErr) {
+        const openai = getOpenAIConfig();
+        if (!openai.enabled) throw generationErr;
+        await writeAiPipelineLog(sb, { level: 'warning', source: 'ai-pipeline', action: 'generation-fallback', message: `Gemini generation failed for ${targetSubject}; switched to OpenAI.`, details: { provider: 'gemini', fallback_provider: 'openai', subject: targetSubject, error: generationErr?.message || String(generationErr), status: generationErr?.status || null, timeout: Boolean(generationErr?.isTimeout), quota: Boolean(generationErr?.isQuotaExhausted), round: batchRound } });
+        const fallbackPrompt = `Generate exactly ${batchNeeded} fresh competitive-exam MCQs for subject "${targetSubject}". Return JSON only with key questions. Each item must contain question, question_hi, option_a, option_b, option_c, option_d, option_a_hi, option_b_hi, option_c_hi, option_d_hi, correct_answer, explanation, explanation_hi, topic, difficulty. Exactly four distinct options, one correct answer A/B/C/D, no filler. Topics: ${(SYLLABUS_TOPICS[targetSubject] || []).join(', ')}.`;
+        const fallback = await callOpenAIJsonWithRetry(fallbackPrompt, { operationName: `OpenAI Question Generation (${targetSubject})`, timeoutMs: options.retryOptions?.timeoutMs || 20000, maxRetries: 2 });
+        const parsed = cleanJsonParse(fallback.text || '{}');
+        generatedList = Array.isArray(parsed.questions) ? parsed.questions : (Array.isArray(parsed) ? parsed : []);
+      }
 
       const candidates = [];
       for (const rawGq of generatedList) {
@@ -1036,18 +1056,20 @@ async function generateUniqueQuestionsQuotaLoop(sb, gemini, options = {}) {
       reviewCalls++;
       let reviews;
       try {
-        reviews = await runGeminiReviewBatch(
-          gemini,
-          candidates,
-          threshold,
-          options.retryOptions || {}
-        );
+        if (!gemini) throw Object.assign(new Error('Gemini review unavailable'), { code: 'GEMINI_UNAVAILABLE' });
+        reviews = await runGeminiReviewBatch(gemini, candidates, threshold, options.retryOptions || {});
       } catch (reviewErr) {
-        pendingReviewCount += candidates.length;
-        console.warn('[Quota Gemini Review Warning]:', reviewErr.message);
-        // Keep candidates out of the public question bank on review failure.
-        // They can be regenerated safely in a later run.
-        continue;
+        const openai = getOpenAIConfig();
+        if (!openai.enabled) {
+          pendingReviewCount += candidates.length;
+          await writeAiPipelineLog(sb, { level: 'error', source: 'ai-pipeline', action: 'review-failed', message: 'Both Gemini review and OpenAI fallback were unavailable.', details: { stage: 'review', subject: targetSubject, error: reviewErr?.message || String(reviewErr), status: reviewErr?.status || null } });
+          continue;
+        }
+        await writeAiPipelineLog(sb, { level: 'warning', source: 'ai-pipeline', action: 'review-fallback', message: `Gemini review failed for ${targetSubject}; switched to OpenAI reviewer.`, details: { provider: 'gemini', fallback_provider: 'openai', subject: targetSubject, error: reviewErr?.message || String(reviewErr), status: reviewErr?.status || null, timeout: Boolean(reviewErr?.isTimeout), quota: Boolean(reviewErr?.isQuotaExhausted) } });
+        const reviewPrompt = `Review these competitive exam questions. Return JSON only: {"reviews":[{"index":0,"verdict":"publish|needs_correction|review","confidence":0.99,"correct_answer_valid":true,"options_quality_ok":true,"factual_accuracy_ok":true,"subject_aligned":true,"notes":"..."}]}. Publish only when the answer is clearly correct and options are distinct and subject aligned. Questions: ${JSON.stringify(candidates.map((q,i)=>({index:i,question:q.question,option_a:q.option_a,option_b:q.option_b,option_c:q.option_c,option_d:q.option_d,correct_answer:q.correct_answer,explanation:q.explanation,subject:q.subject,topic:q.topic})))} `;
+        const fallback = await callOpenAIJsonWithRetry(reviewPrompt, { operationName: `OpenAI Question Review (${targetSubject})`, timeoutMs: options.retryOptions?.timeoutMs || 20000, maxRetries: 2 });
+        const parsed = cleanJsonParse(fallback.text || '{}');
+        reviews = Array.isArray(parsed.reviews) ? parsed.reviews : [];
       }
 
       for (let idx = 0; idx < candidates.length; idx++) {

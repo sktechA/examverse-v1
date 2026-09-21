@@ -7,7 +7,10 @@ import {
   cleanAnswer,
   cleanJsonParse,
   callGeminiWithRetry,
+  callOpenAIJsonWithRetry,
+  getOpenAIConfig,
   getNormalizedGeminiModel,
+  writeAiPipelineLog,
   resolveOptionDuplicatesAndDistribute,
   withApiLogging,
   isValidUuid,
@@ -96,7 +99,16 @@ async function handler(req, res) {
   const results = [];
   for (const q of rows || []) {
     try {
-      const rv = await repairWithGemini(gemini, q);
+      let rv;
+      try {
+        rv = await repairWithGemini(gemini, q);
+      } catch (geminiErr) {
+        const openai = getOpenAIConfig();
+        if (!openai.enabled) throw geminiErr;
+        await writeAiPipelineLog(sb, { level:'warning', source:'ai-repair', action:'gemini-repair-fallback', message:'Gemini repair failed; OpenAI fallback repair was used.', details:{ question_id:q.id, error:geminiErr?.message || String(geminiErr), status:geminiErr?.status || null, timeout:Boolean(geminiErr?.isTimeout), quota:Boolean(geminiErr?.isQuotaExhausted) }, user_id:auth.user?.id || null });
+        const fallback = await callOpenAIJsonWithRetry(`Repair this competitive-exam MCQ only if a single correct answer can be established. Return JSON only: {"verdict":"repair|keep_review","question":"...","option_a":"...","option_b":"...","option_c":"...","option_d":"...","correct_answer":"A|B|C|D","explanation":"...","confidence":0.99,"notes":"..."}. Preserve subject. Question data: ${JSON.stringify(q)}`, { operationName:'OpenAI Question Repair Fallback', timeoutMs:15000, maxRetries:2 });
+        rv = cleanJsonParse(fallback.text || '{}');
+      }
       const rawCandidate = {
         ...q,
         question: rv.question || q.question,

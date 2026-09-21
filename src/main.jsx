@@ -921,6 +921,8 @@ function AdminStat({icon:Icon,label,value,note,kind}){
 function Dashboard({role,setPage,setSelected,session}){
  if(role==='admin'){
   const st=useAdminStats();
+  const [collapsed,setCollapsed]=useState({pipeline:false,health:false,recruitment:false});
+  const togglePanel=(key)=>setCollapsed(prev=>({...prev,[key]:!prev[key]}));
   // 4 Top KPIs per specification: Candidates, Questions, Exams, Pending Review
   const kpis=[
     ['Candidates', st.candidates, 'Registered candidate profiles', Users, 'blue'],
@@ -962,8 +964,12 @@ function Dashboard({role,setPage,setSelected,session}){
               <span className="section-kicker">CONTENT PIPELINE</span>
               <b>Question Review &amp; Filtering</b>
             </div>
-            <button className="text-btn" onClick={()=>setPage('questions')}>Open Queue →</button>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <button className="text-btn" onClick={()=>setPage('questions')}>Open Queue →</button>
+              <button className="icon-action-btn" onClick={()=>togglePanel('pipeline')} aria-label={collapsed.pipeline?'Expand question pipeline':'Collapse question pipeline'} title={collapsed.pipeline?'Expand':'Collapse'}>{collapsed.pipeline?<ChevronDown size={16}/>:<ChevronUp size={16}/>}</button>
+            </div>
           </div>
+          {!collapsed.pipeline && <div>
           <div className="pipeline" style={{marginTop:12}}>
             <div>
               <strong>1</strong>
@@ -994,6 +1000,7 @@ function Dashboard({role,setPage,setSelected,session}){
               <PlusCircle size={14}/> Create Mock Test
             </button>
           </div>
+          </div>}
         </div>
 
         {/* Automation & System Health */}
@@ -1003,14 +1010,17 @@ function Dashboard({role,setPage,setSelected,session}){
               <span className="section-kicker">INFRASTRUCTURE</span>
               <b>Automation &amp; Health</b>
             </div>
-            <span className="success-badge"><CheckCircle2 size={13}/> Operational</span>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span className="success-badge"><CheckCircle2 size={13}/> Operational</span>
+              <button className="icon-action-btn" onClick={()=>togglePanel('health')} aria-label={collapsed.health?'Expand health':'Collapse health'} title={collapsed.health?'Expand':'Collapse'}>{collapsed.health?<ChevronDown size={16}/>:<ChevronUp size={16}/>}</button>
+            </div>
           </div>
-          <div className="health-list" style={{marginTop:10}}>
+          {!collapsed.health && <div className="health-list" style={{marginTop:10}}>
             <p><span><Database size={14}/> Supabase Database</span><b>Healthy</b></p>
             <p><span><ShieldCheck size={14}/> Role Authentication</span><b>Active (RBAC)</b></p>
             <p><span><Upload size={14}/> Question Parser</span><b>Ready</b></p>
             <p><span><Activity size={14}/> Telemetry Events</span><b>{st.pageViews ? 'Streaming' : 'Standby'}</b></p>
-          </div>
+          </div>}
         </div>
       </div>
 
@@ -1021,11 +1031,14 @@ function Dashboard({role,setPage,setSelected,session}){
             <span className="section-kicker">RECRUITMENT NOTIFICATION MONITOR</span>
             <b>Official Portal Status &amp; Gazette Tracking</b>
           </div>
-          <button className="btn light" onClick={()=>setPage('vacancies')} style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-            <ExternalLink size={13} /> Manage Vacancies Hub
-          </button>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <button className="btn light" onClick={()=>setPage('vacancies')} style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+              <ExternalLink size={13} /> Manage Vacancies Hub
+            </button>
+            <button className="icon-action-btn" onClick={()=>togglePanel('recruitment')} aria-label={collapsed.recruitment?'Expand recruitment monitor':'Collapse recruitment monitor'} title={collapsed.recruitment?'Expand':'Collapse'}>{collapsed.recruitment?<ChevronDown size={16}/>:<ChevronUp size={16}/>}</button>
+          </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '10px', marginTop: '12px' }}>
+        {!collapsed.recruitment && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '10px', marginTop: '12px' }}>
           {OFFICIAL_RECRUITMENT_PORTALS.slice(0, 6).map(portal => (
             <div key={portal.id} style={{ border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '10px 12px', background: 'var(--surface-card)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
@@ -1045,7 +1058,7 @@ function Dashboard({role,setPage,setSelected,session}){
               </div>
             </div>
           ))}
-        </div>
+        </div>}
       </div>
     </div>
   );

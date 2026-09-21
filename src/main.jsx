@@ -410,8 +410,8 @@ function Landing({role,setRole,open,setOpen,login}){
         </section>
       </main>
 
-      <footer>
-        © 2026 SKTech Exam Portal · © 2026 SKTech Exam Portal. <b>All Rights Reserved.</b>
+      <footer className="public-footer">
+        © 2026 SKTech Exam Portal. <b>All Rights Reserved.</b>
       </footer>
 
       {open&&<Login role={role} close={()=>setOpen(false)} login={login} initialSignup={initialSignup}/>}
@@ -1396,7 +1396,7 @@ function CandidateDashboard({setPage,setSelected,session}){
 
      {/* Upcoming Exam Slider Carousel */}
      <div style={{marginTop:24}}>
-       <UpcomingExamSlider onOpenExam={(item)=>setSelected(item)} adminMode={role==='admin'} />
+       <UpcomingExamSlider onOpenExam={(item)=>setSelected(item)} />
      </div>
    </div>
  );

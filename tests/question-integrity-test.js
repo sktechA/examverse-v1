@@ -1357,7 +1357,7 @@ export async function runIntegrityTestSuite() {
         generateContent: async ({ contents }) => {
           const promptText = contents?.[0]?.parts?.[0]?.text || '';
           if (promptText.includes('question quality controller')) {
-            const payload = JSON.parse(contents?.[1]?.parts?.[0]?.text || '{\"questions\":[]}');
+            const payload = JSON.parse(contents?.[0]?.parts?.[1]?.text || contents?.[1]?.parts?.[0]?.text || '{\"questions\":[]}');
             return {
               text: JSON.stringify({
                 reviews: (payload.questions || []).map((item) => ({

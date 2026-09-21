@@ -190,7 +190,7 @@ export const TRANSLATIONS = {
     candidateAlertsSub: 'Send & schedule',
 
     // Footer
-    poweredBy: 'Powered by SKTech All Rights Reserved'
+    poweredBy: '© 2026 SKTech Exam Portal. All Rights Reserved.'
   },
 
   hi: {

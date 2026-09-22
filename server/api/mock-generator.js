@@ -11,7 +11,8 @@ import {
   sanitizeString,
   sanitizeErrorResponse,
   checkRateLimit,
-  getClientIp
+  getClientIp,
+  validateQuestionDeterministic
 } from './_shared.js';
 import { generateUniqueQuestionsQuotaLoop } from './daily-scheduler.js';
 
@@ -189,6 +190,8 @@ export default async function handler(req, res) {
       const opts = [q.option_a, q.option_b, q.option_c, q.option_d].map(x => String(x).toLowerCase().trim());
       if (new Set(opts).size < 4) return false;
       if (isDependentContextMissing(q.question)) return false;
+      const integrity = validateQuestionDeterministic(q);
+      if (!integrity.valid) return false;
       const normHash = computeQuestionNormalizedHash(q);
       if (!normHash || seenQuestionHashes.has(normHash)) return false;
       seenQuestionHashes.add(normHash);

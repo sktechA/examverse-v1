@@ -50,6 +50,28 @@ function getBilingualPair(enVal, hiVal) {
   return { en, hi };
 }
 
+function isSemanticallySafeQuestion(q) {
+  const text = `${String(q?.question || '')} ${String(q?.question_hi || '')}`.toLowerCase();
+  const options = ['a','b','c','d'].map(k => String(q?.[`option_${k}`] || q?.[`option_${k}_hi`] || '').replace(/,/g,'').match(/-?\d+(?:\.\d+)?/)?.[0]);
+  const numeric = options.map(v => v == null ? null : Number(v));
+  const check = expected => numeric.filter(v => v !== null).length >= 2 && numeric.some(v => v !== null && Math.abs(v - expected) < 1e-9);
+  const nums = text.replace(/,/g,'').match(/-?\d+(?:\.\d+)?/g)?.map(Number) || [];
+  if (/\bhcf\b|highest common factor|महत्तम समापवर्तक/.test(text) && nums.length >= 2) {
+    let a=Math.abs(Math.trunc(nums[0])), b=Math.abs(Math.trunc(nums[1])); while(b)[a,b]=[b,a%b]; if(!check(a)) return false;
+  }
+  if (/\blcm\b|least common multiple|लघुत्तम समापवर्त्य/.test(text) && nums.length >= 2) {
+    let a=Math.abs(Math.trunc(nums[0])), b=Math.abs(Math.trunc(nums[1])); const g=(()=>{while(b)[a,b]=[b,a%b];return a;})(); const expected=Math.abs(Math.trunc(nums[0])*Math.trunc(nums[1]))/(g||1); if(!check(expected)) return false;
+  }
+  if (/\baverage\b|\bmean\b|औसत|माध्य/.test(text) && nums.length >= 2) {
+    if(!check(nums.reduce((a,b)=>a+b,0)/nums.length)) return false;
+  }
+  const pct=text.match(/(-?\d+(?:\.\d+)?)\s*%[^\d]{0,20}(?:of|का|की|के)\s*(-?\d+(?:\.\d+)?)/);
+  if(pct && !check(Number(pct[1])*Number(pct[2])/100)) return false;
+  const speed=text.match(/(-?\d+(?:\.\d+)?)\s*km[^\d]{0,20}(?:in|में)\s*(-?\d+(?:\.\d+)?)\s*(?:hours?|घंटे?)/);
+  if(speed && /speed|गति|average speed|औसत गति/.test(text) && !check(Number(speed[1])/Number(speed[2]))) return false;
+  return true;
+}
+
 function shuffleArray(arr) {
   const copy = [...arr];
   for (let i = copy.length - 1; i > 0; i--) {
@@ -349,19 +371,18 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
               if (poolQs?.length) {
                 const validPool = poolQs.filter(q => {
                   const ans = cleanAnswer(q.correct_answer, q);
-                  return /^[ABCD]$/.test(ans) && q.option_a && q.option_b && q.option_c && q.option_d && !isDependentContextMissing(q.question);
+                  return /^[ABCD]$/.test(ans) && q.option_a && q.option_b && q.option_c && q.option_d && !isDependentContextMissing(q.question) && isSemanticallySafeQuestion(q);
                 });
 
                 let selected = [];
                 if (targetSubject) {
                   selected = validPool.filter(q => String(q.subject || '').toLowerCase() === targetSubject.toLowerCase());
-                }
-                if (selected.length < effectiveLimit) {
-                  const other = validPool.filter(q => !selected.some(s => s.id === q.id));
-                  selected = [...selected, ...other].slice(0, effectiveLimit);
                 } else {
-                  selected = selected.slice(0, effectiveLimit);
+                  selected = validPool.slice(0, effectiveLimit);
                 }
+                // Never fill a subject exam with another subject. If the pool is short,
+                // show the shortage instead of silently mixing question categories.
+                selected = selected.slice(0, effectiveLimit);
 
                 if (selected.length > 0) {
                   data = selected;
@@ -453,7 +474,8 @@ export default function MockModal({ exam, close, session, supabase, Brand }) {
             (x.option_b?.trim() || x.option_b_hi?.trim()) &&
             (x.option_c?.trim() || x.option_c_hi?.trim()) &&
             (x.option_d?.trim() || x.option_d_hi?.trim()) &&
-            /^[ABCD]$/.test(cleanAnswer(x.correct_answer))
+            /^[ABCD]$/.test(cleanAnswer(x.correct_answer)) &&
+            isSemanticallySafeQuestion(x)
         );
 
         // Shuffle only if randomize is enabled

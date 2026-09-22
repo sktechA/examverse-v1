@@ -1740,6 +1740,40 @@ export function validateQuestionDeterministic(q, options = {}) {
     errors.push('Missing puzzle/arrangement context (dependent question without arrangement details)');
   }
 
+  // Deterministic math sanity checks. These are intentionally conservative:
+  // if a numeric question has no plausible numeric answer option, block it
+  // instead of allowing an unrelated option set to reach a candidate mock.
+  const mathText = `${questionText} ${String(q?.question_hi || '')}`.toLowerCase();
+  const numericOptions = [optA,optB,optC,optD].map(v => {
+    const m = String(v || '').replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+    return m ? Number(m[0]) : null;
+  });
+  const checkExpected = (expected, label) => {
+    const hasNumeric = numericOptions.filter(v => v !== null).length >= 2;
+    if (!hasNumeric) { errors.push(`${label}: options are not numeric/relevant`); return; }
+    if (!numericOptions.some(v => v !== null && Math.abs(v - expected) < 1e-9)) {
+      errors.push(`${label}: expected value ${expected} is not present in options`);
+    }
+  };
+  const nums = mathText.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/g)?.map(Number) || [];
+  if (/\bhcf\b|highest common factor|महत्तम समापवर्तक/.test(mathText) && nums.length >= 2) {
+    let a = Math.abs(Math.trunc(nums[0])), b = Math.abs(Math.trunc(nums[1]));
+    while (b) [a,b] = [b,a%b];
+    checkExpected(a, 'HCF validation');
+  }
+  if (/\blcm\b|least common multiple|लघुत्तम समापवर्त्य/.test(mathText) && nums.length >= 2) {
+    const gcd = (x,y) => { x=Math.abs(Math.trunc(x)); y=Math.abs(Math.trunc(y)); while(y) [x,y]=[y,x%y]; return x; };
+    const g = gcd(nums[0], nums[1]);
+    checkExpected(Math.abs(Math.trunc(nums[0])*Math.trunc(nums[1]))/(g||1), 'LCM validation');
+  }
+  if (/\baverage\b|\bmean\b|औसत|माध्य/.test(mathText) && nums.length >= 2) {
+    checkExpected(nums.reduce((a,b)=>a+b,0)/nums.length, 'Average validation');
+  }
+  const pct = mathText.match(/(-?\d+(?:\.\d+)?)\s*%[^\d]{0,20}(?:of|का|की|के)\s*(-?\d+(?:\.\d+)?)/);
+  if (pct) checkExpected(Number(pct[1])*Number(pct[2])/100, 'Percentage validation');
+  const speed = mathText.match(/(-?\d+(?:\.\d+)?)\s*km[^\d]{0,20}(?:in|में)\s*(-?\d+(?:\.\d+)?)\s*(?:hours?|घंटे?)/);
+  if (speed && /speed|गति|average speed|औसत गति/.test(mathText)) checkExpected(Number(speed[1])/Number(speed[2]), 'Speed validation');
+
   return {
     valid: errors.length === 0,
     errors,

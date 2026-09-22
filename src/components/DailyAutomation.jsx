@@ -18,7 +18,7 @@ import {
   AlertOctagon,
   X,
   Check,
-  Sparkles,
+  Sparkles
 } from 'lucide-react';
 
 export default function DailyAutomation({ supabase, session }) {
@@ -70,7 +70,6 @@ export default function DailyAutomation({ supabase, session }) {
   const [aiChatMessage, setAiChatMessage] = useState('');
   const [aiChatAnswer, setAiChatAnswer] = useState(null);
   const [aiChatBusy, setAiChatBusy] = useState(false);
-  const [activeSection, setActiveSection] = useState('overview');
 
   // Permanent Data Deletion & Database Cleanup State
   const [cleanupCounts, setCleanupCounts] = useState(null);
@@ -453,24 +452,6 @@ export default function DailyAutomation({ supabase, session }) {
         </div>
       )}
 
-      <div className="panel automation-tabs-panel" style={{position:'sticky',top:0,zIndex:20,padding:'8px',marginBottom:14}}>
-        <div className="range-pills" style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-          {[
-            ['overview','Overview','Live target & status'],
-            ['pipeline','Pipeline','Run & test jobs'],
-            ['ai','AI Features','AI chat & AI controls'],
-            ['settings','Automation Settings','Targets & schedules'],
-            ['cleanup','Data Cleanup','Delete / reset data'],
-            ['logs','Logs & Health','Logs, errors & runtime']
-          ].map(([id,label,note])=>(
-            <button key={id} type="button" className={activeSection===id?'active':''} onClick={()=>setActiveSection(id)} style={{padding:'8px 12px',minWidth:140}}>
-              <b style={{display:'block',fontSize:11}}>{label}</b><small style={{fontSize:9,opacity:.75}}>{note}</small>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {activeSection === 'overview' && (<div>
       {/* Target & Quota Overview */}
       <div className="auto-grid">
         <div className="auto-card">
@@ -503,9 +484,7 @@ export default function DailyAutomation({ supabase, session }) {
           </p>
         </div>
       </div>
-      </div>)}
 
-      {activeSection === 'pipeline' && (<div>
       {/* Action Buttons */}
       <div className="panel">
         <div className="panel-head">
@@ -564,9 +543,7 @@ export default function DailyAutomation({ supabase, session }) {
           );
         })()}
       </div>
-      </div>)}
 
-      {activeSection === 'settings' && (<div>
       {/* Settings Panel */}
       <div className="panel">
         <div className="panel-head">
@@ -606,7 +583,19 @@ export default function DailyAutomation({ supabase, session }) {
             />
           </label>
 
-
+          <label>
+            Auto-Approval Confidence Threshold (e.g. 0.93)
+            <input
+              type="number"
+              step="0.01"
+              min="0.5"
+              max="1.0"
+              value={settings.auto_approval_threshold}
+              onChange={e =>
+                setSettings({ ...settings, auto_approval_threshold: Number(e.target.value) })
+              }
+            />
+          </label>
 
           <label>
             00:00:00 Server Scheduler
@@ -621,11 +610,45 @@ export default function DailyAutomation({ supabase, session }) {
             </select>
           </label>
 
+          <label>
+            Gemini AI Validation Layer
+            <select
+              value={settings.gemini_ai_enabled ? 'true' : 'false'}
+              onChange={e =>
+                setSettings({ ...settings, gemini_ai_enabled: e.target.value === 'true' })
+              }
+            >
+              <option value="false">Disabled (Deterministic validation only - Recommended initially)</option>
+              <option value="true">Enabled (Gemini 3.8 Flash + Deterministic)</option>
+            </select>
+          </label>
 
+          <label>
+            Question Synthesis Mode
+            <select
+              value={settings.synthesis_mode_enabled ? 'true' : 'false'}
+              onChange={e =>
+                setSettings(prev => ({ ...prev, synthesis_mode_enabled: e.target.value === 'true' }))
+              }
+            >
+              <option value="false">Disabled (Strict: Use Existing Approved Questions)</option>
+              <option value="true">Enabled (Auto-synthesize new questions)</option>
+            </select>
+          </label>
 
-
-
-
+          <label>
+            Preferred AI Engine / Model
+            <select
+              value={settings.preferred_ai_model || 'gemini-3.8-flash'}
+              onChange={e =>
+                setSettings({ ...settings, preferred_ai_model: e.target.value })
+              }
+            >
+              <option value="gemini-3.8-flash">Gemini 3.8 Flash (High Speed / Verified Accuracy)</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+            </select>
+          </label>
 
           <label>
             Generation Schedule (Timezone: Asia/Kolkata)
@@ -725,9 +748,7 @@ export default function DailyAutomation({ supabase, session }) {
           </div>
         </div>
       </div>
-      </div>)}
 
-      {activeSection === 'cleanup' && (<div>
       {/* Permanent Data Deletion & Database Cleanup Section */}
       <div className="panel" style={{ border: '1px solid #fed7aa', background: '#fff' }}>
         <div className="panel-head" style={{ borderBottom: '1px solid #ffedd5' }}>
@@ -1101,7 +1122,7 @@ export default function DailyAutomation({ supabase, session }) {
             )}
           </div>
         </div>
-      )}
+      </div>
 
       {/* Safety Confirmation Dialog Modal */}
       {cleanupConfirmOpen && (
@@ -1353,22 +1374,6 @@ export default function DailyAutomation({ supabase, session }) {
         </div>
       )}
 
-      {activeSection === 'ai' && (<div>
-      {/* AI Center Configuration */}
-      <div className="panel">
-        <div className="panel-head">
-          <div><b><Sparkles size={16}/> AI Pipeline Controls</b><small>All AI-related controls are kept together here.</small></div>
-          <span className="tag">Gemini → OpenAI fallback</span>
-        </div>
-        <div className="form-grid" style={{marginTop:14}}>
-          <label>Auto-Approval Confidence Threshold<input type="number" step="0.01" min="0.5" max="1.0" value={settings.auto_approval_threshold} onChange={e=>setSettings({...settings,auto_approval_threshold:Number(e.target.value)})}/></label>
-          <label>Gemini AI Validation Layer<select value={settings.gemini_ai_enabled?'true':'false'} onChange={e=>setSettings({...settings,gemini_ai_enabled:e.target.value==='true'})}><option value="true">Enabled — Gemini + deterministic validation</option><option value="false">Disabled — deterministic validation only</option></select></label>
-          <label>Question Synthesis Mode<select value={settings.synthesis_mode_enabled?'true':'false'} onChange={e=>setSettings({...settings,synthesis_mode_enabled:e.target.value==='true'})}><option value="false">Disabled — approved pool only</option><option value="true">Enabled — auto-synthesize new questions</option></select></label>
-          <label>Preferred AI Engine / Model<select value={settings.preferred_ai_model||'gemini-3.8-flash'} onChange={e=>setSettings({...settings,preferred_ai_model:e.target.value})}><option value="gemini-3.8-flash">Gemini 3.8 Flash</option><option value="gemini-2.5-flash">Gemini 2.5 Flash</option><option value="gemini-1.5-pro">Gemini 1.5 Pro</option></select></label>
-        </div>
-        <div style={{marginTop:12,display:'flex',justifyContent:'flex-end'}}><button className="btn primary" disabled={loading} onClick={saveSettings}><CheckCircle2 size={14}/> Save AI Settings</button></div>
-      </div>
-
       {/* AI Diagnostic Chat */}
       <div className="panel" style={{ marginTop:16 }}>
         <div className="panel-head">
@@ -1396,9 +1401,7 @@ export default function DailyAutomation({ supabase, session }) {
           </div>
         )}
       </div>
-      </div>)}
 
-      {activeSection === 'logs' && (<div>
       {/* Execution & System Logs */}
       <div className="panel">
         <div className="panel-head">
@@ -1641,7 +1644,6 @@ export default function DailyAutomation({ supabase, session }) {
           </div>
         )}
       </div>
-      </div>)}
     </div>
   );
 }
